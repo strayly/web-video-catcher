@@ -30,8 +30,7 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
       <span class="switch"><span>抓包</span><span class="sw off" id="sw-proxy"></span></span>
     </div>
     <div class="manual">
-      <input id="manual-url" type="text" placeholder="粘贴视频页 URL 解析清晰度, 或点「捕获」用内置浏览器打开(抖音等需签名的站点)" />
-      <button class="btn primary" id="btn-resolve">解析</button>
+      <input id="manual-url" type="text" placeholder="粘贴视频页 URL, 点「捕获」用内置浏览器打开(抖音等需签名的站点)" />
       <button class="btn primary cap" id="btn-capture">🧲 捕获</button>
       <label class="chk" title="勾选则弹出可见窗口(便于手动播放/调试), 默认不弹窗后台捕获">
         <input type="checkbox" id="chk-popup" /> 弹窗
@@ -200,13 +199,8 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
       else await callCommand("start_proxy");
       refreshProxy();
     } catch {
-      
+
     }
-  });
-  root.querySelector("#btn-resolve")!.addEventListener("click", async () => {
-    const url = (root.querySelector("#manual-url") as HTMLInputElement).value.trim();
-    if (!url) return;
-    await callCommand("resolve_page", { url });
   });
 
   
@@ -219,7 +213,7 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
     countEl.textContent = media.length ? `(${media.length})` : "";
     listEl.innerHTML = media.length
       ? media.map((m) => cardHtml(m, latestTask(m.url, tasks), selected.has(m.id))).join("")
-      : '<div class="empty">暂无。粘贴视频页 URL 点「解析」, 或点「捕获」用内置浏览器播放网页视频即可自动抓直链。</div>';
+      : '<div class="empty">暂无。点「捕获」用内置浏览器播放网页视频即可自动抓直链。</div>';
     
     listEl.querySelectorAll<HTMLInputElement>("input.msel").forEach((b) => {
       b.checked = selected.has(b.dataset.mid!);
