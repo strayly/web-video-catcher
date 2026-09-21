@@ -1,0 +1,29 @@
+[package]
+name = "web-video-catcher"
+version = "0.1.0"
+description = "网页视频捕手"
+edition = "2021"
+authors = ["strayly"]
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "sync", "macros", "time", "process"] }
+
+
+reqwest = { version = "0.13" }
+
+
+rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"] }
+
+[features]
+
+default = []

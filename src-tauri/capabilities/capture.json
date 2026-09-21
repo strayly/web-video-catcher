@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "capture",
+  "description": "捕获浏览器窗口: 允许外部视频站的注入脚本回传媒体直链。remote 只授予「发事件」一项权限, 自定义命令对 remote 源一律硬拒, 所以这里放开为任意 http(s) 站点 —— 硬编码站点白名单会让未列出的站点(TikTok 等)整类静默失效。",
+  "windows": ["capture"],
+  "permissions": ["core:default"],
+  "remote": {
+    "urls": ["http://*", "https://*"],
+    "permissions": ["core:event:allow-emit"]
+  }
+}

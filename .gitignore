@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+src-tauri/target/
+src-tauri/gen/
+
+# Logs
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
