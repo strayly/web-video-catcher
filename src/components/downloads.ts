@@ -156,8 +156,7 @@ function taskHtml(t: DownloadTask, checked: boolean): string {
     const revealTarget = fp || t.out_path;
     actions =
       (fp ? `<button class="btn ghost" data-play="${escapeHtml(fp)}">播放</button>` : "") +
-      `<button class="btn ghost" data-reveal="${escapeHtml(revealTarget)}">文件夹</button>` +
-      `<button class="btn ghost" data-retry="${t.id}">重试</button>`;
+      `<button class="btn ghost" data-reveal="${escapeHtml(revealTarget)}">文件夹</button>`;
   } else if (failed) {
     actions = `<button class="btn ghost" data-retry="${t.id}">重试</button>`;
   } else {

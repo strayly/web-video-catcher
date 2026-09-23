@@ -4,6 +4,8 @@
 
 
 use std::io::{Read, Write};
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, Url};
@@ -22,6 +24,16 @@ pub fn enqueue(app: AppHandle, state: AppState, url: String, format: String, out
         if t.url == url
             && matches!(t.status, TaskStatus::Queued | TaskStatus::Downloading | TaskStatus::Merging)
         {
+            return t.id.clone();
+        }
+    }
+    for t in state.tasks().values() {
+        if t.url == url
+            && t.status == TaskStatus::Done
+            && !t.file_path.is_empty()
+            && std::path::Path::new(&t.file_path).exists()
+        {
+            emit_task(&app, &state, &t.id);
             return t.id.clone();
         }
     }
@@ -392,6 +404,16 @@ pub fn enqueue_pair(
     b_url: String,
     out_dir: String,
 ) -> String {
+    for t in state.tasks().values() {
+        if t.url == a_url
+            && t.status == TaskStatus::Done
+            && !t.file_path.is_empty()
+            && std::path::Path::new(&t.file_path).exists()
+        {
+            emit_task(&app, &state, &t.id);
+            return t.id.clone();
+        }
+    }
     let id = format!("task_{}", now_ms());
     let dir = if out_dir.trim().is_empty() {
         default_out_dir()
@@ -777,6 +799,8 @@ async fn run_yt_dlp(
     
     let out_tmpl = format!("{}/{}__%(title).60s.%(ext)s", dir, id);
     let mut cmd = TokioCommand::new("yt-dlp");
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
     cmd.arg("-f")
         .arg(&format)
         .arg("-o")
@@ -914,6 +938,8 @@ async fn run_yt_dlp(
 
 pub async fn resolve_page(app: AppHandle, state: AppState, url: String) {
     let mut cmd = TokioCommand::new("yt-dlp");
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
     cmd.arg("-J").arg("--no-playlist").arg(&url);
     if let Some(b) = state.cookie_browser() {
         cmd.arg("--cookies-from-browser").arg(b);
@@ -1024,12 +1050,20 @@ fn push_formats(app: &AppHandle, state: &AppState, v: &serde_json::Value) {
 
 
 pub fn test_engine() -> EngineInfo {
-    let yt = std::process::Command::new("yt-dlp").arg("--version").output();
+    let mut ytc = std::process::Command::new("yt-dlp");
+    ytc.arg("--version");
+    #[cfg(windows)]
+    ytc.creation_flags(CREATE_NO_WINDOW);
+    let yt = ytc.output();
     let yt_ok = yt.as_ref().map(|o| o.status.success()).unwrap_or(false);
     let yt_ver = yt
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_default();
-    let ff = std::process::Command::new("ffmpeg").arg("-version").output();
+    let mut ffc = std::process::Command::new("ffmpeg");
+    ffc.arg("-version");
+    #[cfg(windows)]
+    ffc.creation_flags(CREATE_NO_WINDOW);
+    let ff = ffc.output();
     let ff_ok = ff.as_ref().map(|o| o.status.success()).unwrap_or(false);
     EngineInfo {
         yt_dlp: yt_ok,
@@ -1037,6 +1071,9 @@ pub fn test_engine() -> EngineInfo {
         yt_dlp_version: if yt_ok { yt_ver } else { "未安装".into() },
     }
 }
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 pub fn emit_task(app: &AppHandle, state: &AppState, id: &str) {
     if let Some(t) = state.task(id) {

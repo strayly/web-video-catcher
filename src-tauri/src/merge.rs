@@ -6,9 +6,21 @@
 
 use std::process::{Command, Stdio};
 
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+fn ffmpeg() -> Command {
+    let mut c = Command::new("ffmpeg");
+    #[cfg(windows)]
+    c.creation_flags(CREATE_NO_WINDOW);
+    c
+}
 
 pub fn ffmpeg_available() -> bool {
-    Command::new("ffmpeg")
+    ffmpeg()
         .arg("-version")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -19,7 +31,7 @@ pub fn ffmpeg_available() -> bool {
 
 
 pub fn merge(input: &str, output: &str) -> std::io::Result<std::process::ExitStatus> {
-    Command::new("ffmpeg")
+    ffmpeg()
         .args(["-y", "-i", input, "-c", "copy", output])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -46,7 +58,7 @@ pub fn merge_av(
         );
     }
     let (v, a) = pick_av(video_in, audio_in);
-    let out = Command::new("ffmpeg")
+    let out = ffmpeg()
         .args([
             "-y",
             "-i",
@@ -102,7 +114,7 @@ fn pick_av<'a>(a: &'a str, b: &'a str) -> (&'a str, &'a str) {
 
 
 fn has_stream(file: &str, kind: &str) -> bool {
-    Command::new("ffmpeg")
+    ffmpeg()
         .args(["-hide_banner", "-i", file])
         .stdout(Stdio::null())
         .stderr(Stdio::piped())

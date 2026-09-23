@@ -162,9 +162,11 @@ fn open_path(path: String) -> Result<(), String> {
         
         
         use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         let quoted = p.replace('"', "");
         std::process::Command::new("cmd")
             .raw_arg(format!("/c start \"\" \"{quoted}\""))
+            .creation_flags(CREATE_NO_WINDOW)
             .spawn()
             .map_err(|e| format!("打开失败: {e}"))?;
         Ok(())
