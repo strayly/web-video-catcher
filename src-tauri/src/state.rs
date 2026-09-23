@@ -1,6 +1,6 @@
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::schema::*;
@@ -18,6 +18,8 @@ struct Inner {
     capture_title: Mutex<String>,
     
     referer_by_url: Mutex<HashMap<String, String>>,
+
+    feed_count: AtomicUsize,
 }
 
 
@@ -37,6 +39,7 @@ impl AppState {
             capture_page: Mutex::new(None),
             capture_title: Mutex::new(String::new()),
             referer_by_url: Mutex::new(HashMap::new()),
+            feed_count: AtomicUsize::new(0),
         }))
     }
 
@@ -176,6 +179,11 @@ impl AppState {
     pub fn set_capture_page(&self, url: String) {
         *self.0.capture_page.lock().unwrap() = Some(url);
         *self.0.capture_title.lock().unwrap() = String::new();
+        self.0.feed_count.store(0, Ordering::Relaxed);
+    }
+
+    pub fn feed_allow(&self) -> bool {
+        self.0.feed_count.fetch_add(1, Ordering::Relaxed) < 2
     }
 
     

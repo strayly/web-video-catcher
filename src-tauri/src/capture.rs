@@ -333,7 +333,28 @@ pub fn register(app: &AppHandle, state: AppState) {
             status: "new".into(),
         };
         let referer = state.capture_page_url().or_else(|| state.capture_page_origin());
-        
+
+        // 信息流站点(TikTok/抖音/快手)会自动连播, 推荐视频的直链也会被抓进来;
+        // 用户意图是"下载当前页面这条" —— 非音频媒体每次捕获最多保留 2 条,
+        // 但媒体 URL 里带页面视频 ID(/video/<id>)的始终放行(那是正片本尊)。
+        const FEED_HOSTS: &[&str] = &["tiktok.com", "douyin.com", "iesdouyin.com", "kuaishou.com"];
+        let page_url = state.capture_page_url().unwrap_or_default();
+        let is_feed = FEED_HOSTS.iter().any(|h| host_of(&page_url).contains(h));
+        if is_feed && !matches!(item.kind, MediaKind::Audio) {
+            let id_hit = page_url
+                .split("/video/")
+                .nth(1)
+                .or_else(|| page_url.split("/note/").nth(1))
+                .map(|rest| {
+                    let id: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+                    !id.is_empty() && url.contains(&id)
+                })
+                .unwrap_or(false);
+            if !id_hit && !state.feed_allow() {
+                return;
+            }
+        }
+
         if state.push_media(item.clone()) {
             if let Some(r) = &referer {
                 state.set_referer(&url, r.clone());
