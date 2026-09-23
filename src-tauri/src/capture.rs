@@ -35,6 +35,7 @@ const INJECT: &str = r#"(function(){
     // 明确非媒体的响应类型先挡一道, 少发无用的 IPC(Rust 端还会复核)
     if (ct && badRe.test(ct)) return;
     seen[url] = 1;
+    window.__capAny = 1;
     try {
       var ev = window.__TAURI__ && window.__TAURI__.event;
       if (!ev || !ev.emit) { warnOnce('页面里没有 Tauri 注入对象'); return; }
@@ -115,6 +116,51 @@ const INJECT: &str = r#"(function(){
     }
     setInterval(scanPerf, 1500);
     window.addEventListener('load', function(){ setTimeout(scanPerf, 800); });
+  } catch(e){}
+
+  // 自动触发播放: TikTok/B站等动态站点, 隐藏窗口会被节流、播放器不主动发取流请求。
+  // 周期尝试把 video 静音后 play(), 并在加载后点一次常见播放按钮, 让播放器真正开始缓冲 —— 直链才会出现。
+  // 对普通站点无副作用(没有 video 就不做事)。
+  try {
+    var capPlayClicked = false;
+    function tryPlay() {
+      var vs = document.querySelectorAll('video');
+      for (var i = 0; i < vs.length; i++) {
+        var v = vs[i];
+        try {
+          if (v.muted === false) v.muted = true;
+          var pr = v.play && v.play();
+          if (pr && pr.catch) pr.catch(function(){});
+        } catch(e){}
+      }
+      if (!capPlayClicked) {
+        capPlayClicked = true;
+        var sels = ['[class*="play" i]', '[aria-label*="play" i]', '[data-e2e*="play"]'];
+        for (var s = 0; s < sels.length; s++) {
+          try {
+            var btns = document.querySelectorAll(sels[s]);
+            for (var b = 0; b < btns.length; b++) {
+              if (btns[b].offsetParent !== null) { try { btns[b].click(); } catch(e){} }
+            }
+          } catch(e){}
+        }
+      }
+    }
+    setInterval(tryPlay, 2000);
+    window.addEventListener('load', function(){ tryPlay(); setTimeout(tryPlay, 1500); });
+  } catch(e){}
+
+  // 12 秒仍未出现直链时给一次提示(仅一次): 多半是隐藏窗口被节流, 需勾选「弹窗」并手动播放
+  try {
+    setTimeout(function(){
+      if (!window.__capAny) {
+        try {
+          var ev = window.__TAURI__ && window.__TAURI__.event;
+          if (ev && ev.emit) ev.emit('capture://status',
+            '⏳ 12 秒内未检测到媒体直链: 请勾选「弹窗」让捕获窗口可见, 并在窗口内点击播放(TikTok 等站点需可见窗口才发取流请求)');
+        } catch(e){}
+      }
+    }, 12000);
   } catch(e){}
 })();"#;
 
