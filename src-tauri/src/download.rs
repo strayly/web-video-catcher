@@ -54,22 +54,31 @@ pub fn enqueue(app: AppHandle, state: AppState, url: String, format: String, out
     emit_task(&app, &state, &id);
     state.mark_cancel(&id, false);
     let cookie = state.cookie_browser();
-    
+
     let referer = state.referer_of(&url);
-    let cookie_header = webview_cookie_header(&app, &url);
 
-
-    tauri::async_runtime::spawn(run_task(
-        app,
-        state,
-        id.clone(),
-        url,
-        format,
-        dir,
-        referer,
-        cookie,
-        cookie_header,
-    ));
+    let spawned_id = id.clone();
+    tauri::async_runtime::spawn(async move {
+        let cookie_header = tauri::async_runtime::spawn_blocking({
+            let app = app.clone();
+            let url = url.clone();
+            move || webview_cookie_header(&app, &url)
+        })
+        .await
+        .unwrap_or(None);
+        run_task(
+            app,
+            state,
+            spawned_id,
+            url,
+            format,
+            dir,
+            referer,
+            cookie,
+            cookie_header,
+        )
+        .await;
+    });
     id
 }
 
@@ -271,6 +280,7 @@ fn build_media_client() -> Result<reqwest::Client, String> {
         .user_agent(DESKTOP_UA)
         .redirect(reqwest::redirect::Policy::limited(10))
         .connect_timeout(Duration::from_secs(15))
+        .read_timeout(Duration::from_secs(30))
         .build()
         .map_err(|e| format!("初始化下载器失败: {e}"))
 }
@@ -298,6 +308,11 @@ where
         .send()
         .await
         .map_err(|e| format!("请求失败: {e} —— 链接可能已过期, 请重新「捕获」。"))?;
+
+    if cancelled() {
+        let _ = std::fs::remove_file(dest);
+        return Err("__cancelled__".into());
+    }
 
     let status = resp.status();
     if !status.is_success() {
@@ -410,11 +425,24 @@ pub fn enqueue_pair(
     state.mark_cancel(&id, false);
     let ra = state.referer_of(&a_url);
     let rb = state.referer_of(&b_url);
-    let ca = webview_cookie_header(&app, &a_url);
-    let cb = webview_cookie_header(&app, &b_url);
-    tauri::async_runtime::spawn(run_pair(
-        app, state, id.clone(), a_url, b_url, dir, ra, rb, ca, cb,
-    ));
+    let spawned_id = id.clone();
+    tauri::async_runtime::spawn(async move {
+        let ca = tauri::async_runtime::spawn_blocking({
+            let app = app.clone();
+            let a_url = a_url.clone();
+            move || webview_cookie_header(&app, &a_url)
+        })
+        .await
+        .unwrap_or(None);
+        let cb = tauri::async_runtime::spawn_blocking({
+            let app = app.clone();
+            let b_url = b_url.clone();
+            move || webview_cookie_header(&app, &b_url)
+        })
+        .await
+        .unwrap_or(None);
+        run_pair(app, state, spawned_id, a_url, b_url, dir, ra, rb, ca, cb).await;
+    });
     id
 }
 
@@ -590,6 +618,8 @@ async fn run_direct(
     let part = std::path::PathBuf::from(&dir).join(format!("{id}__dl.{ext}.part"));
 
     let t0 = Instant::now();
+    state.set_status(&id, TaskStatus::Downloading);
+    emit_task(&app, &state, &id);
     let cancel_st = state.clone();
     let tid_cancel = id.clone();
     let prog_st = state.clone();
@@ -1008,7 +1038,7 @@ pub fn test_engine() -> EngineInfo {
     }
 }
 
-fn emit_task(app: &AppHandle, state: &AppState, id: &str) {
+pub fn emit_task(app: &AppHandle, state: &AppState, id: &str) {
     if let Some(t) = state.task(id) {
         let _ = app.emit("download://task", &t);
     }

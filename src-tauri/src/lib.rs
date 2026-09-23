@@ -84,8 +84,15 @@ fn list_tasks(state: State<AppState>) -> Vec<DownloadTask> {
 }
 
 #[tauri::command]
-fn cancel_task(state: State<AppState>, id: String) {
+fn cancel_task(app: AppHandle, state: State<AppState>, id: String) {
     state.mark_cancel(&id, true);
+    if let Some(t) = state.task(&id) {
+        if t.status == TaskStatus::Queued {
+            state.set_status(&id, TaskStatus::Cancelled);
+            let st = state.inner().clone();
+            download::emit_task(&app, &st, &id);
+        }
+    }
 }
 
 #[tauri::command]
