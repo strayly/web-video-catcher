@@ -347,8 +347,13 @@ pub fn register(app: &AppHandle, state: AppState) {
                 let probe_url = url.clone();
                 let mid = item.id.clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Some(size) =
-                        crate::download::probe_size(&probe_url, referer.as_deref()).await
+                    let cookie = crate::download::webview_cookie_header(&h, &probe_url);
+                    if let Some(size) = crate::download::probe_size(
+                        &probe_url,
+                        referer.as_deref(),
+                        cookie.as_deref(),
+                    )
+                    .await
                     {
                         if let Some(updated) = st.set_media_size(&mid, size) {
                             let _ = h.emit("sniffer://update", updated);

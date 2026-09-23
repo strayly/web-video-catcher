@@ -6,7 +6,7 @@
 use std::io::{Read, Write};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager, Url};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command as TokioCommand;
 use crate::capture::DESKTOP_UA;
@@ -56,8 +56,9 @@ pub fn enqueue(app: AppHandle, state: AppState, url: String, format: String, out
     let cookie = state.cookie_browser();
     
     let referer = state.referer_of(&url);
-    
-    
+    let cookie_header = webview_cookie_header(&app, &url);
+
+
     tauri::async_runtime::spawn(run_task(
         app,
         state,
@@ -67,6 +68,7 @@ pub fn enqueue(app: AppHandle, state: AppState, url: String, format: String, out
         dir,
         referer,
         cookie,
+        cookie_header,
     ));
     id
 }
@@ -82,9 +84,10 @@ async fn run_task(
     dir: String,
     referer: Option<String>,
     cookie: Option<String>,
+    cookie_header: Option<String>,
 ) {
     if !is_direct_media(&url) {
-        run_yt_dlp(app, state, id, url, format, dir, referer, cookie).await;
+        run_yt_dlp(app, state, id, url, format, dir, referer, cookie, cookie_header).await;
         return;
     }
     run_direct(
@@ -94,6 +97,7 @@ async fn run_task(
         url.clone(),
         dir.clone(),
         referer.clone(),
+        cookie_header.clone(),
     )
     .await;
     
@@ -108,7 +112,7 @@ async fn run_task(
     state.set_error(&id, String::new());
     state.set_status(&id, TaskStatus::Queued);
     emit_task(&app, &state, &id);
-    run_yt_dlp(app.clone(), state.clone(), id.clone(), url, format, dir, referer, cookie).await;
+    run_yt_dlp(app.clone(), state.clone(), id.clone(), url, format, dir, referer, cookie, cookie_header).await;
     if state.status_of(&id) == TaskStatus::Failed {
         let second = state.task(&id).map(|t| t.error).unwrap_or_default();
         state.set_error(&id, format!("{second}（内置下载器也失败: {first}）"));
@@ -136,7 +140,7 @@ fn is_direct_media(url: &str) -> bool {
     
     
     
-    const CDNS: [&str; 15] = [
+    const CDNS: [&str; 18] = [
         "douyinvod.com",
         "bytecdntp.com",
         "douyinpic.com",
@@ -155,6 +159,9 @@ fn is_direct_media(url: &str) -> bool {
         "tiktokcdn.com",
         "tiktokcdn-us.com",
         "tiktokcdn-eu.com",
+        "tiktok.com",
+        "tiktokv.com",
+        "byteoversea.com",
     ];
     let host = low.split("://").nth(1).unwrap_or("").split('/').next().unwrap_or("");
     CDNS.iter().any(|d| host == *d || host.ends_with(&format!(".{d}")))
@@ -167,6 +174,7 @@ fn is_direct_media(url: &str) -> bool {
 fn with_browser_headers(
     req: reqwest::RequestBuilder,
     referer: Option<&str>,
+    cookie: Option<&str>,
 ) -> reqwest::RequestBuilder {
     let mut req = req.header(reqwest::header::ACCEPT, "*/*");
     if let Some(r) = referer {
@@ -175,7 +183,38 @@ fn with_browser_headers(
             req = req.header(reqwest::header::ORIGIN, o);
         }
     }
+    if let Some(c) = cookie {
+        req = req.header(reqwest::header::COOKIE, c);
+    }
     req
+}
+
+
+
+pub fn webview_cookie_header(app: &AppHandle, url: &str) -> Option<String> {
+    let parsed: Url = url.parse().ok()?;
+    let mut pairs: Vec<String> = Vec::new();
+    for (_label, w) in app.webview_windows() {
+        let cookies = match w.cookies_for_url(parsed.clone()) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        for c in cookies {
+            let (n, v) = (c.name().to_string(), c.value().to_string());
+            if n.is_empty() {
+                continue;
+            }
+            let key = format!("{n}=");
+            if !pairs.iter().any(|p| p.starts_with(&key)) {
+                pairs.push(format!("{n}={v}"));
+            }
+        }
+    }
+    if pairs.is_empty() {
+        None
+    } else {
+        Some(pairs.join("; "))
+    }
 }
 
 
@@ -201,7 +240,7 @@ fn size_from_response(resp: &reqwest::Response) -> Option<i64> {
 
 
 
-pub async fn probe_size(url: &str, referer: Option<&str>) -> Option<i64> {
+pub async fn probe_size(url: &str, referer: Option<&str>, cookie: Option<&str>) -> Option<i64> {
     let client = reqwest::Client::builder()
         .user_agent(DESKTOP_UA)
         .connect_timeout(Duration::from_secs(10))
@@ -209,7 +248,7 @@ pub async fn probe_size(url: &str, referer: Option<&str>) -> Option<i64> {
         .build()
         .ok()?;
 
-    let head = with_browser_headers(client.head(url), referer);
+    let head = with_browser_headers(client.head(url), referer, cookie);
     if let Ok(resp) = head.send().await {
         if resp.status().is_success() {
             if let Some(n) = size_from_response(&resp) {
@@ -221,6 +260,7 @@ pub async fn probe_size(url: &str, referer: Option<&str>) -> Option<i64> {
     let probe = with_browser_headers(
         client.get(url).header(reqwest::header::RANGE, "bytes=0-0"),
         referer,
+        cookie,
     );
     size_from_response(&probe.send().await.ok()?)
 }
@@ -245,6 +285,7 @@ async fn fetch_to_file<F>(
     client: &reqwest::Client,
     url: &str,
     referer: Option<&str>,
+    cookie: Option<&str>,
     dest: &std::path::Path,
     cancelled: impl Fn() -> bool,
     mut on_progress: F,
@@ -252,8 +293,7 @@ async fn fetch_to_file<F>(
 where
     F: FnMut(i64, i64),
 {
-    
-    let req = with_browser_headers(client.get(url), referer);
+    let req = with_browser_headers(client.get(url), referer, cookie);
     let mut resp = req
         .send()
         .await
@@ -370,8 +410,10 @@ pub fn enqueue_pair(
     state.mark_cancel(&id, false);
     let ra = state.referer_of(&a_url);
     let rb = state.referer_of(&b_url);
+    let ca = webview_cookie_header(&app, &a_url);
+    let cb = webview_cookie_header(&app, &b_url);
     tauri::async_runtime::spawn(run_pair(
-        app, state, id.clone(), a_url, b_url, dir, ra, rb,
+        app, state, id.clone(), a_url, b_url, dir, ra, rb, ca, cb,
     ));
     id
 }
@@ -386,6 +428,8 @@ async fn run_pair(
     dir: String,
     ra: Option<String>,
     rb: Option<String>,
+    ca: Option<String>,
+    cb: Option<String>,
 ) {
     use std::sync::atomic::{AtomicI64, Ordering};
     cleanup_parts(&dir, &id);
@@ -445,8 +489,8 @@ async fn run_pair(
 
     
     let (ra_res, rb_res) = tokio::join!(
-        fetch_to_file(&client, &a_url, ra.as_deref(), &pa, cancel_a, make_cb(0)),
-        fetch_to_file(&client, &b_url, rb.as_deref(), &pb, cancel_b, make_cb(1))
+        fetch_to_file(&client, &a_url, ra.as_deref(), ca.as_deref(), &pa, cancel_a, make_cb(0)),
+        fetch_to_file(&client, &b_url, rb.as_deref(), cb.as_deref(), &pb, cancel_b, make_cb(1))
     );
 
     
@@ -531,6 +575,7 @@ async fn run_direct(
     url: String,
     dir: String,
     referer: Option<String>,
+    cookie_header: Option<String>,
 ) {
     
     cleanup_parts(&dir, &id);
@@ -554,6 +599,7 @@ async fn run_direct(
         &client,
         &url,
         referer.as_deref(),
+        cookie_header.as_deref(),
         &part,
         move || cancel_st.is_cancelled(&tid_cancel),
         move |down: i64, tot: i64| {
@@ -694,6 +740,7 @@ async fn run_yt_dlp(
     dir: String,
     referer: Option<String>,
     cookie_browser: Option<String>,
+    cookie_header: Option<String>,
 ) {
     
     cleanup_parts(&dir, &id);
@@ -722,6 +769,9 @@ async fn run_yt_dlp(
         .arg(DESKTOP_UA);
     if let Some(r) = &referer {
         cmd.arg("--add-header").arg(format!("Referer: {r}"));
+    }
+    if let Some(c) = &cookie_header {
+        cmd.arg("--add-header").arg(format!("Cookie: {c}"));
     }
     if let Some(b) = &cookie_browser {
         cmd.arg("--cookies-from-browser").arg(b);
