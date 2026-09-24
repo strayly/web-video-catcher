@@ -2,10 +2,23 @@
 import { listen } from "@tauri-apps/api/event";
 import { callCommand } from "../utils/ipc";
 import type { MediaItem, DownloadTask } from "../types";
-import { t, pickBi } from "../i18n";
+import { t, pickBi, errText } from "../i18n";
 
 function kindLabel(k: string): string {
   return t("kind." + k.toLowerCase()) || k.toLowerCase();
+}
+
+// Rust 侧的画质兜底标签按当前语言显示(未知画质则不显示)。
+function qualLabel(q: string): string {
+  if (!q || /^(未知|Unknown)$/i.test(q)) return "";
+  if (q === "杜比全景声") return t("q.dolbyAtmos");
+  if (q === "杜比视界") return t("q.dolbyVision");
+  return q;
+}
+
+// Rust 侧的标题兜底值按当前语言显示。
+function titleText(s: string): string {
+  return /^(未知标题|Unknown title)$/.test(s) ? t("media.unknownTitle") : s;
 }
 
 function fmtSize(bytes: number): string {
@@ -299,7 +312,7 @@ function cardHtml(m: MediaItem, task: DownloadTask | null, checked: boolean): st
         : m.kind === "Audio"
           ? "badge audio"
           : "badge";
-  const quality = m.quality && !/^(未知|Unknown)$/i.test(m.quality) ? m.quality : "";
+  const quality = qualLabel(m.quality || "");
   const size = fmtSize(m.size_bytes) || t("media.sizeUnknown");
   const sub = `<span class="${cls}">${badge}</span> ${[quality, size, t("media.from", { source: m.source })]
     .map(escapeHtml)
@@ -310,7 +323,7 @@ function cardHtml(m: MediaItem, task: DownloadTask | null, checked: boolean): st
     return `<div class="card">
       ${sel}
       <div class="thumb">▶</div>
-      <div class="meta"><div class="name">${escapeHtml(m.title)}</div><div class="sub">${sub}</div></div>
+      <div class="meta"><div class="name">${escapeHtml(titleText(m.title))}</div><div class="sub">${sub}</div></div>
       <div class="acts">
         <button class="btn primary" data-dl="${escapeAttr(m.url)}">${t("sniffer.download")}</button>
         <button class="btn ghost" data-copy="${escapeAttr(m.url)}">${t("sniffer.copy")}</button>
@@ -332,7 +345,7 @@ function cardHtml(m: MediaItem, task: DownloadTask | null, checked: boolean): st
       ${sel}
       <div class="thumb">▶</div>
       <div class="meta">
-        <div class="name">${escapeHtml(m.title)}</div><div class="sub">${sub}</div>
+        <div class="name">${escapeHtml(titleText(m.title))}</div><div class="sub">${sub}</div>
         <div class="minibar"><i style="width:${task.status === "Queued" ? 0 : pct}%"></i></div>
       </div>
       <div class="acts">
@@ -349,7 +362,7 @@ function cardHtml(m: MediaItem, task: DownloadTask | null, checked: boolean): st
     return `<div class="card">
       ${sel}
       <div class="thumb done">✓</div>
-      <div class="meta"><div class="name">${escapeHtml(task.title || m.title)}</div><div class="sub">${sub}</div></div>
+      <div class="meta"><div class="name">${escapeHtml(titleText(task.title || m.title))}</div><div class="sub">${sub}</div></div>
       <div class="acts">
         <span class="dlstate ok">${t("dl.done")}</span>
         ${fp ? `<button class="btn primary" data-play="${escapeAttr(fp)}">${t("dl.play")}</button>` : ""}
@@ -360,13 +373,13 @@ function cardHtml(m: MediaItem, task: DownloadTask | null, checked: boolean): st
   }
 
   const errLine = task.error
-    ? `<div class="errline" title="${escapeAttr(task.error)}">${escapeHtml(task.error)}</div>`
+    ? `<div class="errline" title="${escapeAttr(errText(task.error))}">${escapeHtml(errText(task.error))}</div>`
     : "";
   const stText = task.status === "Failed" ? t("dl.failed") : t("dl.cancelled");
   return `<div class="card haserr">
     ${sel}
     <div class="thumb">▶</div>
-    <div class="meta"><div class="name">${escapeHtml(m.title)}</div><div class="sub">${sub}</div>${errLine}</div>
+    <div class="meta"><div class="name">${escapeHtml(titleText(m.title))}</div><div class="sub">${sub}</div>${errLine}</div>
     <div class="acts">
       <span class="dlstate err">${stText}</span>
       <button class="btn primary" data-dl="${escapeAttr(m.url)}">${t("dl.retry")}</button>

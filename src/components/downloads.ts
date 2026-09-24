@@ -1,7 +1,7 @@
 
 import { callCommand } from "../utils/ipc";
 import type { DownloadTask, TaskStatus } from "../types";
-import { t } from "../i18n";
+import { t, errText } from "../i18n";
 
 function stLabel(s: TaskStatus): string {
   switch (s) {
@@ -134,7 +134,7 @@ export function mountDownloads(root: HTMLElement, refresh: () => void): (t: Down
         try {
           await callCommand("open_path", { path: b.dataset.play });
         } catch (e) {
-          alert(String(e));
+          alert(errText(String(e)));
         }
       }),
     );
@@ -143,7 +143,7 @@ export function mountDownloads(root: HTMLElement, refresh: () => void): (t: Down
         try {
           await callCommand("reveal_path", { path: b.dataset.reveal });
         } catch (e) {
-          alert(String(e));
+          alert(errText(String(e)));
         }
       }),
     );
@@ -201,7 +201,7 @@ function taskHtml(task: DownloadTask, checked: boolean): string {
     actions = `<button class="btn ghost" data-cancel="${task.id}">${t("dl.cancel")}</button>`;
   }
   actions += `<button class="btn ghost" data-del="${task.id}" title="${t("dl.deleteTitle")}">${t("dl.delete")}</button>`;
-  const err = task.error ? `<div class="info" style="color:#e5484d">${escapeHtml(task.error)}</div>` : "";
+  const err = task.error ? `<div class="info" style="color:#e5484d">${escapeHtml(errText(task.error))}</div>` : "";
   return `<div class="dl">
     ${sel}
     <div class="row"><div class="name">${escapeHtml(task.title)}</div><div class="${stCls}">${stLabel(task.status)} ${speed}</div></div>

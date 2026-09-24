@@ -44,7 +44,7 @@ export function mountSettings(root: HTMLElement): () => void {
       const el = root.querySelector("#engine-info") as HTMLElement;
       el.textContent = t("set.engineInfo", {
         ok: info.yt_dlp ? t("common.ok") : t("common.missing"),
-        ver: info.yt_dlp_version,
+        ver: info.yt_dlp ? info.yt_dlp_version : t("set.notInstalled"),
         ok2: info.ffmpeg ? t("common.ok") : t("common.missing"),
       });
     });

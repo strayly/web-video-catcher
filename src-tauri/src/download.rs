@@ -17,6 +17,24 @@ use crate::sniffer::{classify, host_of};
 use crate::state::AppState;
 
 
+/// 生成双语提示文本: 序列化为 {"zh":..,"en":..} JSON 字符串, 由前端解析选显。
+pub fn bi(zh: &str, en: &str) -> String {
+    serde_json::json!({ "zh": zh, "en": en }).to_string()
+}
+
+/// 拆出双语字段: 若 s 是 {"zh":..,"en":..} JSON 则返回 (zh, en), 否则原样返回。
+pub fn bi_part(s: &str) -> (String, String) {
+    serde_json::from_str::<serde_json::Value>(s)
+        .ok()
+        .and_then(|v| {
+            let zh = v["zh"].as_str()?.to_string();
+            let en = v["en"].as_str()?.to_string();
+            Some((zh, en))
+        })
+        .unwrap_or_else(|| (s.to_string(), s.to_string()))
+}
+
+
 
 pub fn enqueue(app: AppHandle, state: AppState, url: String, format: String, out_dir: String) -> String {
     
@@ -136,7 +154,15 @@ async fn run_task(
     run_yt_dlp(app.clone(), state.clone(), id.clone(), url, format, dir, referer, cookie, cookie_header).await;
     if state.status_of(&id) == TaskStatus::Failed {
         let second = state.task(&id).map(|t| t.error).unwrap_or_default();
-        state.set_error(&id, format!("{second}（内置下载器也失败: {first}）"));
+        let (s_zh, s_en) = bi_part(&second);
+        let (f_zh, f_en) = bi_part(&first);
+        state.set_error(
+            &id,
+            bi(
+                &format!("{s_zh}（内置下载器也失败: {f_zh}）"),
+                &format!("{s_en} (built-in downloader also failed: {f_en})"),
+            ),
+        );
         emit_task(&app, &state, &id);
     }
 }
@@ -295,7 +321,7 @@ fn build_media_client() -> Result<reqwest::Client, String> {
         .connect_timeout(Duration::from_secs(15))
         .read_timeout(Duration::from_secs(30))
         .build()
-        .map_err(|e| format!("初始化下载器失败: {e}"))
+        .map_err(|e| bi(&format!("初始化下载器失败: {e}"), &format!("Failed to initialize downloader: {e}")))
 }
 
 
@@ -320,7 +346,12 @@ where
     let mut resp = req
         .send()
         .await
-        .map_err(|e| format!("请求失败: {e} —— 链接可能已过期, 请重新「捕获」。"))?;
+        .map_err(|e| {
+            bi(
+                &format!("请求失败: {e} —— 链接可能已过期, 请重新「捕获」。"),
+                &format!("Request failed: {e} — the link may have expired, please re-capture."),
+            )
+        })?;
 
     if cancelled() {
         let _ = std::fs::remove_file(dest);
@@ -329,12 +360,21 @@ where
 
     let status = resp.status();
     if !status.is_success() {
-        let hint = match status.as_u16() {
-            401 | 403 | 412 => " —— CDN 拒绝访问(防盗链或链接已过期), 请重新「捕获」后再下载。",
-            404 | 410 => " —— 链接已失效, 请重新「捕获」。",
-            _ => "",
+        let (h_zh, h_en) = match status.as_u16() {
+            401 | 403 | 412 => (
+                " —— CDN 拒绝访问(防盗链或链接已过期), 请重新「捕获」后再下载。",
+                " — CDN refused access (hotlink protection or expired link). Re-capture before downloading.",
+            ),
+            404 | 410 => (
+                " —— 链接已失效, 请重新「捕获」。",
+                " — Link expired. Please re-capture.",
+            ),
+            _ => ("", ""),
         };
-        return Err(format!("HTTP {}{hint}", status.as_u16()));
+        return Err(bi(
+            &format!("HTTP {}{h_zh}", status.as_u16()),
+            &format!("HTTP {}{h_en}", status.as_u16()),
+        ));
     }
 
     let ct = resp
@@ -345,13 +385,15 @@ where
         .to_ascii_lowercase();
     
     if ct.starts_with("text/") || ct.contains("json") || ct.contains("html") {
-        return Err(format!(
-            "服务器返回的是网页/文本({ct})而非视频, 多为防盗链拦截。请重新「捕获」后用可见窗口播放一次再下载。"
+        return Err(bi(
+            &format!("服务器返回的是网页/文本({ct})而非视频, 多为防盗链拦截。请重新「捕获」后用可见窗口播放一次再下载。"),
+            &format!("Server returned a web page/text ({ct}) instead of video, usually hotlink protection. Re-capture, then play once in the visible window before downloading."),
         ));
     }
 
     let total = resp.content_length().unwrap_or(0) as i64;
-    let mut file = std::fs::File::create(dest).map_err(|e| format!("创建文件失败: {e}"))?;
+    let mut file = std::fs::File::create(dest)
+        .map_err(|e| bi(&format!("创建文件失败: {e}"), &format!("Failed to create file: {e}")))?;
     let mut downloaded: i64 = 0;
     let mut last_emit = Instant::now();
     loop {
@@ -366,15 +408,16 @@ where
             Err(e) => {
                 drop(file);
                 let _ = std::fs::remove_file(dest);
-                return Err(format!(
-                    "下载中断: {e} —— 可点「重试」; 若仍失败请重新「捕获」。"
+                return Err(bi(
+                    &format!("下载中断: {e} —— 可点「重试」; 若仍失败请重新「捕获」。"),
+                    &format!("Download interrupted: {e} — you can retry; if it still fails, re-capture."),
                 ));
             }
         };
         if let Err(e) = file.write_all(&chunk) {
             drop(file);
             let _ = std::fs::remove_file(dest);
-            return Err(format!("写入文件失败: {e}"));
+            return Err(bi(&format!("写入文件失败: {e}"), &format!("Failed to write file: {e}")));
         }
         downloaded += chunk.len() as i64;
         
@@ -386,7 +429,7 @@ where
     if let Err(e) = file.flush() {
         drop(file);
         let _ = std::fs::remove_file(dest);
-        return Err(format!("写入文件失败: {e}"));
+        return Err(bi(&format!("写入文件失败: {e}"), &format!("Failed to write file: {e}")));
     }
     drop(file);
     
@@ -554,11 +597,29 @@ async fn run_pair(
     }
     if let Err(e) = &ra_res {
         let _ = std::fs::remove_file(&pb);
-        return fail_direct(&app, &state, &id, format!("第一条流下载失败: {e}"));
+        let (e_zh, e_en) = bi_part(e);
+        return fail_direct(
+            &app,
+            &state,
+            &id,
+            bi(
+                &format!("第一条流下载失败: {e_zh}"),
+                &format!("Failed to download the video stream: {e_en}"),
+            ),
+        );
     }
     if let Err(e) = &rb_res {
         let _ = std::fs::remove_file(&pa);
-        return fail_direct(&app, &state, &id, format!("第二条流下载失败: {e}"));
+        let (e_zh, e_en) = bi_part(e);
+        return fail_direct(
+            &app,
+            &state,
+            &id,
+            bi(
+                &format!("第二条流下载失败: {e_zh}"),
+                &format!("Failed to download the audio stream: {e_en}"),
+            ),
+        );
     }
 
     
@@ -571,7 +632,14 @@ async fn run_pair(
                 &app,
                 &state,
                 &id,
-                format!("其中一条只拿到 {size} 字节的非视频内容(疑似防盗链拦截)。请重新「捕获」后再合并。"),
+                bi(
+                    &format!(
+                        "其中一条流只拿到 {size} 字节的非视频内容(疑似防盗链拦截)。请重新「捕获」后再合并。"
+                    ),
+                    &format!(
+                        "One of the streams only got {size} bytes of non-video content (likely hotlink protection). Re-capture before merging."
+                    ),
+                ),
             );
         }
     }
@@ -595,7 +663,15 @@ async fn run_pair(
     if !valid_media(&out_tmp) {
         let size = std::fs::metadata(&out_tmp).map(|m| m.len()).unwrap_or(0);
         let _ = std::fs::remove_file(&out_tmp);
-        return fail_direct(&app, &state, &id, format!("合并产物异常(仅 {size} 字节), 已丢弃。"));
+        return fail_direct(
+            &app,
+            &state,
+            &id,
+            bi(
+                &format!("合并产物异常(仅 {size} 字节), 已丢弃。"),
+                &format!("Merged output is abnormal (only {size} bytes), discarded."),
+            ),
+        );
     }
 
     let final_path = finalize_name(&out_tmp, &state, &a_url, &dir, None);
@@ -688,7 +764,10 @@ async fn run_direct(
             &app,
             &state,
             &id,
-            format!("只拿到 {size} 字节的非视频内容(疑似防盗链/风控页)。请重新「捕获」后用可见窗口播放一次再下载。"),
+            bi(
+                &format!("只拿到 {size} 字节的非视频内容(疑似防盗链/风控页)。请重新「捕获」后用可见窗口播放一次再下载。"),
+                &format!("Only got {size} bytes of non-video content (likely hotlink protection / risk-control page). Re-capture, then play once in the visible window before downloading."),
+            ),
         );
     }
 
@@ -838,7 +917,13 @@ async fn run_yt_dlp(
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
-            state.set_error(&id, format!("启动 yt-dlp 失败: {e}（请确认本机已安装 yt-dlp 并在 PATH 中）"));
+            state.set_error(
+                &id,
+                bi(
+                    &format!("启动 yt-dlp 失败: {e}（请确认本机已安装 yt-dlp 并在 PATH 中）"),
+                    &format!("Failed to launch yt-dlp: {e} (make sure yt-dlp is installed and in PATH)"),
+                ),
+            );
             state.set_status(&id, TaskStatus::Failed);
             emit_task(&app, &state, &id);
             return;
@@ -892,11 +977,14 @@ async fn run_yt_dlp(
     
     if !status.map(|s| s.success()).unwrap_or(false) {
         let msg = if last_err.is_empty() {
-            "yt-dlp 下载失败(进程退出码非 0)".to_string()
+            bi(
+                "yt-dlp 下载失败(进程退出码非 0)",
+                "yt-dlp download failed (non-zero exit code)",
+            )
         } else {
-            last_err
+            friendly_err(&last_err)
         };
-        state.set_error(&id, friendly_err(&msg));
+        state.set_error(&id, msg);
         state.set_status(&id, TaskStatus::Failed);
         emit_task(&app, &state, &id);
         return;
@@ -917,8 +1005,9 @@ async fn run_yt_dlp(
             let _ = std::fs::remove_file(&p); 
             state.set_error(
                 &id,
-                format!(
-                    "下载到的是 {size} 字节的非视频内容, 多为站点防盗链拦截。请勾选「弹窗」用可见窗口播放一次再下载, 或改用「解析」。"
+                bi(
+                    &format!("下载到的是 {size} 字节的非视频内容, 多为站点防盗链拦截。请勾选「弹窗」用可见窗口播放一次再下载, 或改用「解析」。"),
+                    &format!("Downloaded {size} bytes of non-video content, usually blocked by hotlink protection. Enable \"visible window\" and play once before downloading, or use the parser instead."),
                 ),
             );
             state.set_status(&id, TaskStatus::Failed);
@@ -927,7 +1016,10 @@ async fn run_yt_dlp(
         None => {
             state.set_error(
                 &id,
-                "未找到下载产物: 链接可能已过期或被防盗链拦截。请重新「捕获」后再下载。".into(),
+                bi(
+                    "未找到下载产物: 链接可能已过期或被防盗链拦截。请重新「捕获」后再下载。",
+                    "No output file found: the link may have expired or been blocked by hotlink protection. Re-capture before downloading.",
+                ),
             );
             state.set_status(&id, TaskStatus::Failed);
             emit_task(&app, &state, &id);
@@ -1001,9 +1093,15 @@ fn extract_error(stderr: &str) -> String {
 fn friendly_err(msg: &str) -> String {
     let m = msg.to_ascii_lowercase();
     if m.contains("403") || m.contains("forbidden") || m.contains("412") {
-        format!("{msg} —— CDN 拒绝访问(防盗链)。已自动带 Referer/UA; 仍失败请勾选「弹窗」在可见窗口播放一次, 再点下载。")
+        bi(
+            &format!("{msg} —— CDN 拒绝访问(防盗链)。已自动带 Referer/UA; 仍失败请勾选「弹窗」在可见窗口播放一次, 再点下载。"),
+            &format!("{msg} — CDN refused access (hotlink protection). Referer/UA were sent automatically; if it still fails, enable \"visible window\", play once, then download."),
+        )
     } else if msg.contains("cookies") {
-        format!("{msg} —— 该平台需要登录态 cookie, 可在「设置」里指定浏览器读取 cookie。")
+        bi(
+            &format!("{msg} —— 该平台需要登录态 cookie, 可在「设置」里指定浏览器读取 cookie。"),
+            &format!("{msg} — this platform requires login cookies; pick a browser in Settings for cookie import."),
+        )
     } else {
         msg.to_string()
     }
@@ -1069,7 +1167,7 @@ pub fn test_engine() -> EngineInfo {
     EngineInfo {
         yt_dlp: yt_ok,
         ffmpeg: ff_ok,
-        yt_dlp_version: if yt_ok { yt_ver } else { "未安装".into() },
+        yt_dlp_version: if yt_ok { yt_ver } else { String::new() },
     }
 }
 

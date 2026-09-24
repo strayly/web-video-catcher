@@ -136,7 +136,7 @@ async fn open_capture(
     let visible = !silent.unwrap_or(false);
     tauri::async_runtime::spawn_blocking(move || capture::open(&app2, &st, url, inject.unwrap_or(true), visible))
         .await
-        .map_err(|e| format!("任务执行失败: {e}"))?
+        .map_err(|e| crate::download::bi(&format!("任务执行失败: {e}"), &format!("Task execution failed: {e}")))?
 }
 
 
@@ -152,10 +152,16 @@ fn close_capture(app: AppHandle) {
 fn open_path(path: String) -> Result<(), String> {
     let p = path.trim();
     if p.is_empty() {
-        return Err("文件路径为空, 任务可能未完成".into());
+        return Err(crate::download::bi(
+            "文件路径为空, 任务可能未完成",
+            "File path is empty, the task may not be finished",
+        ));
     }
     if !std::path::Path::new(p).exists() {
-        return Err(format!("文件不存在: {p}"));
+        return Err(crate::download::bi(
+            &format!("文件不存在: {p}"),
+            &format!("File not found: {p}"),
+        ));
     }
     #[cfg(target_os = "windows")]
     {
@@ -168,7 +174,9 @@ fn open_path(path: String) -> Result<(), String> {
             .raw_arg(format!("/c start \"\" \"{quoted}\""))
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()
-            .map_err(|e| format!("打开失败: {e}"))?;
+            .map_err(|e| {
+                crate::download::bi(&format!("打开失败: {e}"), &format!("Failed to open: {e}"))
+            })?;
         Ok(())
     }
     #[cfg(not(target_os = "windows"))]
@@ -176,7 +184,9 @@ fn open_path(path: String) -> Result<(), String> {
         std::process::Command::new("xdg-open")
             .arg(p)
             .spawn()
-            .map_err(|e| format!("打开失败: {e}"))?;
+            .map_err(|e| {
+                crate::download::bi(&format!("打开失败: {e}"), &format!("Failed to open: {e}"))
+            })?;
         Ok(())
     }
 }
@@ -186,7 +196,7 @@ fn open_path(path: String) -> Result<(), String> {
 fn reveal_path(path: String) -> Result<(), String> {
     let p = path.trim();
     if p.is_empty() {
-        return Err("路径为空".into());
+        return Err(crate::download::bi("路径为空", "Path is empty"));
     }
     let path = std::path::Path::new(p);
     let (dir, file) = if path.is_file() {
@@ -198,7 +208,10 @@ fn reveal_path(path: String) -> Result<(), String> {
         (path.to_path_buf(), false)
     };
     if !dir.exists() {
-        return Err(format!("目录不存在: {}", dir.display()));
+        return Err(crate::download::bi(
+            &format!("目录不存在: {}", dir.display()),
+            &format!("Directory not found: {}", dir.display()),
+        ));
     }
     #[cfg(target_os = "windows")]
     {
@@ -214,7 +227,12 @@ fn reveal_path(path: String) -> Result<(), String> {
         std::process::Command::new("explorer")
             .raw_arg(target)
             .spawn()
-            .map_err(|e| format!("打开文件夹失败: {e}"))?;
+            .map_err(|e| {
+                crate::download::bi(
+                    &format!("打开文件夹失败: {e}"),
+                    &format!("Failed to open folder: {e}"),
+                )
+            })?;
         Ok(())
     }
     #[cfg(not(target_os = "windows"))]
@@ -222,7 +240,12 @@ fn reveal_path(path: String) -> Result<(), String> {
         std::process::Command::new("xdg-open")
             .arg(&dir)
             .spawn()
-            .map_err(|e| format!("打开文件夹失败: {e}"))?;
+            .map_err(|e| {
+                crate::download::bi(
+                    &format!("打开文件夹失败: {e}"),
+                    &format!("Failed to open folder: {e}"),
+                )
+            })?;
         Ok(())
     }
 }

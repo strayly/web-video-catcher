@@ -102,6 +102,10 @@ const ZH: Dict = {
 
   "common.ok": "OK",
   "common.missing": "缺失",
+  "set.notInstalled": "未安装",
+  "media.unknownTitle": "未知标题",
+  "q.dolbyAtmos": "杜比全景声",
+  "q.dolbyVision": "杜比视界",
 };
 
 const EN: Dict = {
@@ -200,6 +204,10 @@ const EN: Dict = {
 
   "common.ok": "OK",
   "common.missing": "Missing",
+  "set.notInstalled": "not installed",
+  "media.unknownTitle": "Unknown title",
+  "q.dolbyAtmos": "Dolby Atmos",
+  "q.dolbyVision": "Dolby Vision",
 };
 
 const DICTS: Record<Lang, Dict> = { zh: ZH, en: EN };
@@ -244,6 +252,18 @@ export function t(key: string, vars?: Record<string, string | number>): string {
 export function pickBi(msg: string | { zh: string; en: string }): string {
   if (typeof msg === "string") return msg;
   return lang === "zh" ? msg.zh : msg.en;
+}
+
+// 用于错误文本: Rust 侧错误字符串可能是 '{"zh":..,"en":..}' JSON, 解析后按语言选显; 解析失败原样返回。
+export function errText(s: string): string {
+  if (!s) return "";
+  try {
+    const v = JSON.parse(s);
+    if (v && typeof v === "object" && typeof v.zh === "string" && typeof v.en === "string") {
+      return lang === "zh" ? v.zh : v.en;
+    }
+  } catch {}
+  return s;
 }
 
 export function initI18n(): void {

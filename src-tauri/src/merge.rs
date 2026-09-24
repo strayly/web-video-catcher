@@ -51,11 +51,12 @@ pub fn merge_av(
     output: &str,
 ) -> Result<(), String> {
     if !ffmpeg_available() {
-        return Err(
+        return Err(crate::download::bi(
             "未检测到 ffmpeg, 无法合并音视频。请安装 ffmpeg 并加入 PATH 后重试; \
-             或单独下载其中一条(视频无声 / 仅音频)。"
-                .into(),
-        );
+             或单独下载其中一条(视频无声 / 仅音频)。",
+            "ffmpeg not found, cannot merge audio and video. Install ffmpeg and add it to PATH, then retry; \
+             or download one of the streams separately (video without sound / audio only).",
+        ));
     }
     let (v, a) = pick_av(video_in, audio_in);
     let out = ffmpeg()
@@ -83,12 +84,15 @@ pub fn merge_av(
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .output()
-        .map_err(|e| format!("启动 ffmpeg 失败: {e}"))?;
+        .map_err(|e| crate::download::bi(&format!("启动 ffmpeg 失败: {e}"), &format!("Failed to launch ffmpeg: {e}")))?;
     if out.status.success() {
         Ok(())
     } else {
         let tail = last_lines(&String::from_utf8_lossy(&out.stderr), 3);
-        Err(format!("ffmpeg 合并失败: {tail}"))
+        Err(crate::download::bi(
+            &format!("ffmpeg 合并失败: {tail}"),
+            &format!("ffmpeg merge failed: {tail}"),
+        ))
     }
 }
 
