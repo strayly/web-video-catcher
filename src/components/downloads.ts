@@ -1,25 +1,35 @@
 
 import { callCommand } from "../utils/ipc";
 import type { DownloadTask, TaskStatus } from "../types";
+import { t } from "../i18n";
 
-const ST_LABEL: Record<TaskStatus, string> = {
-  Queued: "排队中",
-  Downloading: "下载中",
-  Merging: "合并中",
-  Done: "已完成",
-  Failed: "失败",
-  Paused: "已暂停",
-  Cancelled: "已取消",
-};
+function stLabel(s: TaskStatus): string {
+  switch (s) {
+    case "Queued":
+      return t("dl.queued");
+    case "Downloading":
+      return t("dl.statusDownloading");
+    case "Merging":
+      return t("dl.merging");
+    case "Done":
+      return t("dl.done");
+    case "Failed":
+      return t("dl.failed");
+    case "Paused":
+      return t("dl.paused");
+    case "Cancelled":
+      return t("dl.cancelled");
+  }
+}
 
 export function mountDownloads(root: HTMLElement, refresh: () => void): (t: DownloadTask[]) => void {
   root.innerHTML = `
     <div class="list-head">
-      <h3 class="sec">下载任务</h3>
+      <h3 class="sec">${t("dl.title")}</h3>
       <div class="batchbar">
-        <label class="chk"><input type="checkbox" id="t-selall" /> 全选</label>
-        <button class="btn ghost small" id="t-del-sel">删除选中</button>
-        <button class="btn ghost small" id="t-del-done">清空已完成</button>
+        <label class="chk"><input type="checkbox" id="t-selall" /> ${t("sniffer.selAll")}</label>
+        <button class="btn ghost small" id="t-del-sel">${t("sniffer.delSel")}</button>
+        <button class="btn ghost small" id="t-del-done">${t("dl.clearDone")}</button>
       </div>
     </div>
     <div id="task-list"></div>`;
@@ -48,7 +58,7 @@ export function mountDownloads(root: HTMLElement, refresh: () => void): (t: Down
   root.querySelector("#t-del-sel")!.addEventListener("click", async () => {
     const ids = Array.from(selected);
     if (ids.length === 0) {
-      alert("请先勾选要删除的任务。");
+      alert(t("dl.delSelEmpty"));
       return;
     }
     try {
@@ -63,7 +73,7 @@ export function mountDownloads(root: HTMLElement, refresh: () => void): (t: Down
   root.querySelector("#t-del-done")!.addEventListener("click", async () => {
     const ids = latest.filter((t) => t.status === "Done").map((t) => t.id);
     if (ids.length === 0) {
-      alert("没有已完成的任务。");
+      alert(t("dl.noDone"));
       return;
     }
     try {
@@ -82,7 +92,7 @@ export function mountDownloads(root: HTMLElement, refresh: () => void): (t: Down
     );
     listEl.innerHTML = sorted.length
       ? sorted.map((t) => taskHtml(t, selected.has(t.id))).join("")
-      : '<div class="empty">暂无下载任务。在「嗅探」里点「下载」即可。</div>';
+      : `<div class="empty">${t("dl.empty")}</div>`;
     
     const live = new Set(tasks.map((t) => t.id));
     Array.from(selected).forEach((id) => {
@@ -155,18 +165,18 @@ function taskHtml(t: DownloadTask, checked: boolean): string {
     const fp = t.file_path || "";
     const revealTarget = fp || t.out_path;
     actions =
-      (fp ? `<button class="btn ghost" data-play="${escapeHtml(fp)}">播放</button>` : "") +
-      `<button class="btn ghost" data-reveal="${escapeHtml(revealTarget)}">文件夹</button>`;
+      (fp ? `<button class="btn ghost" data-play="${escapeHtml(fp)}">${t("dl.play")}</button>` : "") +
+      `<button class="btn ghost" data-reveal="${escapeHtml(revealTarget)}">${t("dl.folder")}</button>`;
   } else if (failed) {
-    actions = `<button class="btn ghost" data-retry="${t.id}">重试</button>`;
+    actions = `<button class="btn ghost" data-retry="${t.id}">${t("dl.retry")}</button>`;
   } else {
-    actions = `<button class="btn ghost" data-cancel="${t.id}">取消</button>`;
+    actions = `<button class="btn ghost" data-cancel="${t.id}">${t("dl.cancel")}</button>`;
   }
-  actions += `<button class="btn ghost" data-del="${t.id}" title="仅从列表移除, 不删本地文件">删除</button>`;
+  actions += `<button class="btn ghost" data-del="${t.id}" title="${t("dl.deleteTitle")}">${t("dl.delete")}</button>`;
   const err = t.error ? `<div class="info" style="color:#e5484d">${escapeHtml(t.error)}</div>` : "";
   return `<div class="dl">
     ${sel}
-    <div class="row"><div class="name">${escapeHtml(t.title)}</div><div class="${stCls}">${ST_LABEL[t.status]} ${speed}</div></div>
+    <div class="row"><div class="name">${escapeHtml(t.title)}</div><div class="${stCls}">${stLabel(t.status)} ${speed}</div></div>
     <div class="${barCls}"><i style="width:${pct}%"></i></div>
     <div class="info"><span>${pct}% · ${size}</span><span class="acts-inline">${actions}</span></div>
     ${err}

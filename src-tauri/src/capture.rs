@@ -160,9 +160,9 @@ const INJECT: &str = r#"(function(){
         try {
           var ev = window.__TAURI__ && window.__TAURI__.event;
           if (ev && ev.emit) {
-            var tip = '⏳ 12 秒内未检测到媒体直链: 请勾选「弹窗」让捕获窗口可见, 并在窗口内点击播放(TikTok 等站点需可见窗口才发取流请求)';
+            var tip = { zh: '⏳ 12 秒内未检测到媒体直链: 请勾选「弹窗」让捕获窗口可见, 并在窗口内点击播放(TikTok 等站点需可见窗口才发取流请求)', en: '⏳ No media direct link detected in 12s: tick Popup to show the capture window, and click play inside it (sites like TikTok only emit streams in a visible window)' };
             if (location.host.indexOf('xiaohongshu.com') >= 0) {
-              tip = '⏳ 小红书视频需登录后才能播放: 请勾选「弹窗」, 在弹出的窗口里登录小红书, 登录成功后再点「捕获」重试';
+              tip = { zh: '⏳ 小红书视频需登录后才能播放: 请勾选「弹窗」, 在弹出的窗口里登录小红书, 登录成功后再点「捕获」重试', en: '⏳ Xiaohongshu videos require login: tick Popup, log in to Xiaohongshu in the window, then click Capture again' };
             }
             ev.emit('capture://status', tip);
           }
@@ -225,38 +225,44 @@ pub fn open(app: &AppHandle, state: &AppState, url: String, inject: bool, visibl
             .devtools(visible)
             .user_agent(DESKTOP_UA)
             .on_navigation(move |u| {
-                let msg = format!("导航: {u}");
-                println!("[capture] {msg}");
-                let _ = nav_app.emit("capture://status", msg);
+                let msg_zh = format!("导航: {u}");
+                let msg_en = format!("Navigating: {u}");
+                println!("[capture] {msg_zh}");
+                let _ = nav_app.emit("capture://status", serde_json::json!({"zh": msg_zh, "en": msg_en}));
                 true
             })
             .on_page_load(move |_w, payload| {
-                let stage = match payload.event() {
-                    tauri::webview::PageLoadEvent::Started => "开始加载",
-                    tauri::webview::PageLoadEvent::Finished => "加载完成",
+                let (stage_zh, stage_en) = match payload.event() {
+                    tauri::webview::PageLoadEvent::Started => ("开始加载", "Started"),
+                    tauri::webview::PageLoadEvent::Finished => ("加载完成", "Finished"),
                 };
-                let msg = format!("{stage}: {}", payload.url());
-                println!("[capture] {msg}");
-                let _ = load_app.emit("capture://status", msg);
+                let msg_zh = format!("{stage_zh}: {}", payload.url());
+                let msg_en = format!("{stage_en}: {}", payload.url());
+                println!("[capture] {msg_zh}");
+                let _ = load_app.emit("capture://status", serde_json::json!({"zh": msg_zh, "en": msg_en}));
             })
             .on_document_title_changed(move |_w, t| {
                 
                 
                 if let Some(reason) = t.strip_prefix(WARN_PREFIX) {
                     if !ACL_WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                        let msg = format!(
+                        let msg_zh = format!(
                             "⚠️ 抓不到媒体: 回传通道被拒({reason}) —— 该站点未在 capabilities/capture.json 的 remote.urls 中授权"
                         );
-                        println!("[capture] {msg}");
-                        let _ = title_app.emit("capture://status", msg);
+                        let msg_en = format!(
+                            "⚠️ Cannot grab media: callback channel rejected ({reason}) —— this site is not authorized in capabilities/capture.json remote.urls"
+                        );
+                        println!("[capture] {msg_zh}");
+                        let _ = title_app.emit("capture://status", serde_json::json!({"zh": msg_zh, "en": msg_en}));
                     }
                     return;
                 }
-                let msg = format!("标题: {t}");
-                println!("[capture] {msg}");
+                let msg_zh = format!("标题: {t}");
+                let msg_en = format!("Page title: {t}");
+                println!("[capture] {msg_zh}");
                 
                 title_state.set_capture_title(t.clone());
-                let _ = title_app.emit("capture://status", msg);
+                let _ = title_app.emit("capture://status", serde_json::json!({"zh": msg_zh, "en": msg_en}));
             });
         
         
@@ -272,14 +278,7 @@ pub fn open(app: &AppHandle, state: &AppState, url: String, inject: bool, visibl
     for attempt in 0..3 {
         match make_builder().build() {
             Ok(_) => {
-                let hint = if !visible {
-                    "后台捕获已启动(不弹窗)。页面加载后自动捕获媒体直链, 进度见上方状态条"
-                } else if inject {
-                    "捕获窗口已打开(含注入)。若白屏, 按 F12 看控制台, 或用「原始窗口」重试"
-                } else {
-                    "原始窗口已打开(无注入), 仅用于排查白屏原因"
-                };
-                return Ok(hint.into());
+                return Ok(String::new());
             }
             Err(e) => {
                 last_err = e.to_string();

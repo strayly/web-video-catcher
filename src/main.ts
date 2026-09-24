@@ -5,17 +5,18 @@ import type { MediaItem, DownloadTask } from "./types";
 import { mountSniffer } from "./components/sniffer";
 import { mountDownloads } from "./components/downloads";
 import { mountSettings } from "./components/settings";
+import { t, initI18n } from "./i18n";
 
 const app = document.getElementById("app")!;
 app.innerHTML = `
   <div class="win">
     <div class="body">
       <div class="side">
-        <div class="brand">📥 网页视频捕手</div>
+        <div class="brand">📥 ${t("app.title")}</div>
         <div class="nav">
-          <button class="active" data-v="sniffer"><span class="ic">🔎</span> 嗅探</button>
-          <button data-v="downloads"><span class="ic">📋</span> 下载管理</button>
-          <button data-v="settings"><span class="ic">⚙️</span> 设置</button>
+          <button class="active" data-v="sniffer"><span class="ic">🔎</span> ${t("nav.sniffer")}</button>
+          <button data-v="downloads"><span class="ic">📋</span> ${t("nav.downloads")}</button>
+          <button data-v="settings"><span class="ic">⚙️</span> ${t("nav.settings")}</button>
         </div>
       </div>
       <div class="main">
@@ -114,3 +115,24 @@ callCommand<DownloadTask[]>("list_tasks").then((t) => {
   if (activeView() === "downloads") updateDownloads(taskList());
   else if (activeView() === "sniffer") updateSniffer(state.media, taskList());
 });
+
+// 语言切换时刷新导航/标题与当前视图
+function applyLang() {
+  document.title = t("app.title");
+  const navMap: Record<string, string> = {
+    sniffer: t("nav.sniffer"),
+    downloads: t("nav.downloads"),
+    settings: t("nav.settings"),
+  };
+  (document.querySelector(".brand") as HTMLElement).innerHTML = `📥 ${t("app.title")}`;
+  document.querySelectorAll<HTMLButtonElement>(".nav button").forEach((b) => {
+    const v = b.dataset.v!;
+    const ic = b.querySelector(".ic")?.outerHTML ?? "";
+    b.innerHTML = `${ic} ${navMap[v]}`;
+  });
+}
+window.addEventListener("i18n-change", () => {
+  applyLang();
+  renderActive();
+});
+initI18n();

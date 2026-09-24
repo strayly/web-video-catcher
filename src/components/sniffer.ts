@@ -1,19 +1,12 @@
 
-
-
 import { listen } from "@tauri-apps/api/event";
 import { callCommand } from "../utils/ipc";
 import type { MediaItem, DownloadTask } from "../types";
+import { t, pickBi } from "../i18n";
 
-const KIND_LABEL: Record<string, string> = {
-  Mp4: "mp4",
-  M3u8: "m3u8",
-  Ts: "ts",
-  Dash: "dash",
-  Audio: "音频",
-  Other: "video",
-};
-
+function kindLabel(k: string): string {
+  return t("kind." + k.toLowerCase()) || k.toLowerCase();
+}
 
 function fmtSize(bytes: number): string {
   if (!bytes || bytes <= 0) return "";
@@ -25,35 +18,35 @@ function fmtSize(bytes: number): string {
 export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaItem[], tasks: DownloadTask[]) => void {
   root.innerHTML = `
     <div class="statusbar">
-      <span class="pill" id="pill-proxy"><span class="led off"></span> 代理 已关闭</span>
-      <span class="pill warn"><span class="led"></span> 抓包 0 路</span>
-      <span class="switch"><span>抓包</span><span class="sw off" id="sw-proxy"></span></span>
+      <span class="pill" id="pill-proxy"><span class="led off"></span> ${t("sniffer.proxyOff")}</span>
+      <span class="pill warn"><span class="led"></span> ${t("sniffer.capCount", { n: 0 })}</span>
+      <span class="switch"><span>${t("sniffer.captureToggle")}</span><span class="sw off" id="sw-proxy"></span></span>
     </div>
     <div class="manual">
-      <input id="manual-url" type="text" placeholder="粘贴视频页 URL, 点「捕获」用内置浏览器打开(抖音等需签名的站点)" />
-      <button class="btn primary cap" id="btn-capture">🧲 捕获</button>
-      <label class="chk" title="勾选则弹出可见窗口(便于手动播放/调试), 默认不弹窗后台捕获">
-        <input type="checkbox" id="chk-popup" /> 弹窗
+      <input id="manual-url" type="text" placeholder="${t("sniffer.urlPlaceholder")}" />
+      <button class="btn primary cap" id="btn-capture">🧲 ${t("sniffer.btnCapture")}</button>
+      <label class="chk" title="${t("sniffer.popupTitle")}">
+        <input type="checkbox" id="chk-popup" /> ${t("sniffer.chkPopup")}
       </label>
     </div>
     <div class="capbar" id="cap-bar" style="display:none">
-      <span class="cap-text" id="cap-status">正在打开捕获窗口…</span>
+      <span class="cap-text" id="cap-status">${t("sniffer.capOpening")}</span>
       <span class="cap-acts">
-        <button class="btn ghost small" id="btn-cap-raw" title="无注入打开, 排查白屏">原始窗口</button>
-        <button class="btn ghost small" id="btn-cap-close">关闭捕获</button>
+        <button class="btn ghost small" id="btn-cap-raw" title="${t("sniffer.capRawTitle")}">${t("sniffer.capRawBtn")}</button>
+        <button class="btn ghost small" id="btn-cap-close">${t("sniffer.capClose")}</button>
       </span>
     </div>
     <div class="list-head">
-      <h3 class="sec">检测到的媒体 <span class="mcount" id="m-count"></span></h3>
+      <h3 class="sec">${t("sniffer.mediaTitle")} <span class="mcount" id="m-count"></span></h3>
       <div class="batchbar">
-        <label class="chk"><input type="checkbox" id="m-selall" /> 全选</label>
-        <button class="btn primary small" id="m-merge" title="勾选 1 条视频 + 1 条音频, 合成为带声音的 mp4">🔀 合并</button>
-        <button class="btn ghost small" id="m-del-sel">删除选中</button>
-        <button class="btn ghost small" id="m-clear">清空全部</button>
+        <label class="chk"><input type="checkbox" id="m-selall" /> ${t("sniffer.selAll")}</label>
+        <button class="btn primary small" id="m-merge" title="${t("sniffer.mergeTitle")}">🔀 ${t("sniffer.merge")}</button>
+        <button class="btn ghost small" id="m-del-sel">${t("sniffer.delSel")}</button>
+        <button class="btn ghost small" id="m-clear">${t("sniffer.clearAll")}</button>
       </div>
     </div>
     <div class="mergehint" id="merge-hint" style="display:none">
-      🎬 这是音视频分离(DASH)站点: 单独下载视频<b>没有声音</b>。勾选 <b>1 条视频 + 1 条音频</b>, 点「🔀 合并」即可合成带声音的 mp4
+      🎬 ${t("sniffer.mergeHint")}
     </div>
     <div id="media-list"></div>
   `;
@@ -71,30 +64,34 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
   const capBar = root.querySelector("#cap-bar") as HTMLElement;
   const capStatus = root.querySelector("#cap-status") as HTMLElement;
   let capLines: string[] = [];
-  const pushCap = (msg: string) => {
-    capLines.push(msg);
+  const pushCap = (msg: string | { zh: string; en: string }) => {
+    capLines.push(pickBi(msg));
     if (capLines.length > 4) capLines = capLines.slice(-4);
     capBar.style.display = "flex";
     capStatus.textContent = capLines.join("  ·  ");
   };
-  const unlistenCap = listen<string>("capture://status", (e) => pushCap(e.payload));
+  const unlistenCap = listen<any>("capture://status", (e) => pushCap(e.payload));
 
   const openCapture = async (inject: boolean) => {
     const url = (root.querySelector("#manual-url") as HTMLInputElement).value.trim();
     const popup = (root.querySelector("#chk-popup") as HTMLInputElement).checked;
     if (!url) {
       capBar.style.display = "flex";
-      capStatus.textContent = "请先粘贴视频页地址, 再点「捕获」。";
+      capStatus.textContent = t("sniffer.pleasePaste");
       return;
     }
     capLines = [];
-    const mode = popup ? (inject ? "正在打开捕获窗口…" : "正在打开原始窗口(无注入)…") : "正在后台启动捕获(不弹窗)…";
+    const mode = popup
+      ? inject
+        ? t("sniffer.capOpening")
+        : t("sniffer.capOpeningRaw")
+      : t("sniffer.capOpeningBg");
     pushCap(mode);
     try {
       const msg = await callCommand<string>("open_capture", { url, inject, silent: !popup });
-      pushCap(String(msg));
+      if (msg) pushCap(msg);
     } catch (e) {
-      pushCap("打开失败: " + String(e));
+      pushCap(t("sniffer.openFailed") + String(e));
     }
   };
   root.querySelector("#btn-capture")!.addEventListener("click", () => openCapture(true));
@@ -102,9 +99,9 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
   root.querySelector("#btn-cap-close")!.addEventListener("click", async () => {
     try {
       await callCommand("close_capture");
-      pushCap("捕获窗口已关闭。");
+      pushCap(t("sniffer.closeOk"));
     } catch (e) {
-      pushCap("关闭失败: " + String(e));
+      pushCap(t("sniffer.closeFailed") + String(e));
     }
   });
 
@@ -128,7 +125,7 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
   root.querySelector("#m-merge")!.addEventListener("click", async () => {
     const picked = currentMedia.filter((m) => selected.has(m.id));
     if (picked.length !== 2) {
-      alert(`合并需要勾选恰好 2 项(1 条视频 + 1 条音频), 当前选中 ${picked.length} 项。`);
+      alert(t("sniffer.mergeNeed2", { n: picked.length }));
       return;
     }
     const [a, b] = picked;
@@ -136,8 +133,8 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
     if ((a.kind === "Audio") === (b.kind === "Audio")) {
       alert(
         a.kind === "Audio"
-          ? "两条都是音频, 没有画面可放 —— 请改选 1 条视频 + 1 条音频。"
-          : "两条都是视频, 合并后依然没有声音 —— 请改选 1 条视频 + 1 条音频。",
+          ? t("sniffer.mergeBothAudio")
+          : t("sniffer.mergeBothVideo"),
       );
       return;
     }
@@ -156,7 +153,7 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
   root.querySelector("#m-del-sel")!.addEventListener("click", async () => {
     const ids = Array.from(selected);
     if (ids.length === 0) {
-      alert("请先勾选要删除的媒体项。");
+      alert(t("sniffer.delSelEmpty"));
       return;
     }
     try {
@@ -168,7 +165,7 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
     }
   });
   root.querySelector("#m-clear")!.addEventListener("click", async () => {
-    if (!confirm("清空全部嗅探到的媒体？(只是列表, 不影响已下载文件, 可重新捕获)")) return;
+    if (!confirm(t("sniffer.clearConfirm"))) return;
     try {
       await callCommand("clear_media");
       selected.clear();
@@ -183,8 +180,8 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
     try {
       const s = await callCommand<{ running: boolean; addr: string }>("proxy_status");
       pill.innerHTML = s.running
-        ? `<span class="led"></span> 代理 已开启 · ${s.addr}`
-        : `<span class="led off"></span> 代理 已关闭`;
+        ? `<span class="led"></span> ${t("sniffer.proxyOn", { addr: s.addr })}`
+        : `<span class="led off"></span> ${t("sniffer.proxyOff")}`;
       sw.classList.toggle("off", !s.running);
     } catch {
       
@@ -199,7 +196,7 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
       else await callCommand("start_proxy");
       refreshProxy();
     } catch {
-
+      
     }
   });
 
@@ -213,7 +210,7 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
     countEl.textContent = media.length ? `(${media.length})` : "";
     listEl.innerHTML = media.length
       ? media.map((m) => cardHtml(m, latestTask(m.url, tasks), selected.has(m.id))).join("")
-      : '<div class="empty">暂无。点「捕获」用内置浏览器播放网页视频即可自动抓直链。</div>';
+      : `<div class="empty">${t("sniffer.empty")}</div>`;
     
     listEl.querySelectorAll<HTMLInputElement>("input.msel").forEach((b) => {
       b.checked = selected.has(b.dataset.mid!);
@@ -278,7 +275,7 @@ function latestTask(url: string, tasks: DownloadTask[]): DownloadTask | null {
 }
 
 function cardHtml(m: MediaItem, task: DownloadTask | null, checked: boolean): string {
-  const badge = KIND_LABEL[m.kind] || "video";
+  const badge = kindLabel(m.kind);
   const cls =
     m.kind === "M3u8"
       ? "badge m3u8"
@@ -288,9 +285,9 @@ function cardHtml(m: MediaItem, task: DownloadTask | null, checked: boolean): st
           ? "badge audio"
           : "badge";
   
-  const quality = m.quality && m.quality !== "未知" ? m.quality : "";
-  const size = fmtSize(m.size_bytes) || "大小未知";
-  const sub = `<span class="${cls}">${badge}</span> ${[quality, size, `来自 ${m.source}`]
+  const quality = m.quality && !/^(未知|Unknown)$/i.test(m.quality) ? m.quality : "";
+  const size = fmtSize(m.size_bytes) || t("media.sizeUnknown");
+  const sub = `<span class="${cls}">${badge}</span> ${[quality, size, t("media.from", { source: m.source })]
     .map(escapeHtml)
     .join(" · ")}`;
   const sel = `<label class="msel"><input type="checkbox" class="msel" data-mid="${escapeAttr(m.id)}" ${checked ? "checked" : ""} /></label>`;
@@ -302,19 +299,23 @@ function cardHtml(m: MediaItem, task: DownloadTask | null, checked: boolean): st
       <div class="thumb">▶</div>
       <div class="meta"><div class="name">${escapeHtml(m.title)}</div><div class="sub">${sub}</div></div>
       <div class="acts">
-        <button class="btn primary" data-dl="${escapeAttr(m.url)}">下载</button>
-        <button class="btn ghost" data-copy="${escapeAttr(m.url)}">复制</button>
+        <button class="btn primary" data-dl="${escapeAttr(m.url)}">${t("sniffer.download")}</button>
+        <button class="btn ghost" data-copy="${escapeAttr(m.url)}">${t("sniffer.copy")}</button>
       </div>
     </div>`;
   }
 
   const pct = Math.round(task.progress * 100);
-  const copyBtn = `<button class="btn ghost" data-copy="${escapeAttr(m.url)}">复制</button>`;
+  const copyBtn = `<button class="btn ghost" data-copy="${escapeAttr(m.url)}">${t("sniffer.copy")}</button>`;
 
   
   if (task.status === "Queued" || task.status === "Downloading" || task.status === "Merging") {
     const label =
-      task.status === "Queued" ? "排队中" : task.status === "Merging" ? "合并中" : `下载中 ${pct}%`;
+      task.status === "Queued"
+        ? t("dl.queued")
+        : task.status === "Merging"
+          ? t("dl.merging")
+          : t("dl.downloading", { pct });
     return `<div class="card">
       ${sel}
       <div class="thumb">▶</div>
@@ -324,7 +325,7 @@ function cardHtml(m: MediaItem, task: DownloadTask | null, checked: boolean): st
       </div>
       <div class="acts">
         <span class="dlstate">${label}</span>
-        <button class="btn ghost" data-cancel="${task.id}">取消</button>
+        <button class="btn ghost" data-cancel="${task.id}">${t("dl.cancel")}</button>
         ${copyBtn}
       </div>
     </div>`;
@@ -339,9 +340,9 @@ function cardHtml(m: MediaItem, task: DownloadTask | null, checked: boolean): st
       <div class="thumb done">✓</div>
       <div class="meta"><div class="name">${escapeHtml(task.title || m.title)}</div><div class="sub">${sub}</div></div>
       <div class="acts">
-        <span class="dlstate ok">已完成</span>
-        ${fp ? `<button class="btn primary" data-play="${escapeAttr(fp)}">播放</button>` : ""}
-        <button class="btn ghost" data-reveal="${escapeAttr(revealTarget)}">文件夹</button>
+        <span class="dlstate ok">${t("dl.done")}</span>
+        ${fp ? `<button class="btn primary" data-play="${escapeAttr(fp)}">${t("dl.play")}</button>` : ""}
+        <button class="btn ghost" data-reveal="${escapeAttr(revealTarget)}">${t("dl.folder")}</button>
         ${copyBtn}
       </div>
     </div>`;
@@ -351,14 +352,14 @@ function cardHtml(m: MediaItem, task: DownloadTask | null, checked: boolean): st
   const errLine = task.error
     ? `<div class="errline" title="${escapeAttr(task.error)}">${escapeHtml(task.error)}</div>`
     : "";
-  const stText = task.status === "Failed" ? "下载失败" : "已取消";
+  const stText = task.status === "Failed" ? t("dl.failed") : t("dl.cancelled");
   return `<div class="card haserr">
     ${sel}
     <div class="thumb">▶</div>
     <div class="meta"><div class="name">${escapeHtml(m.title)}</div><div class="sub">${sub}</div>${errLine}</div>
     <div class="acts">
       <span class="dlstate err">${stText}</span>
-      <button class="btn primary" data-dl="${escapeAttr(m.url)}">重新下载</button>
+      <button class="btn primary" data-dl="${escapeAttr(m.url)}">${t("dl.retry")}</button>
       ${copyBtn}
     </div>
   </div>`;
