@@ -1,5 +1,7 @@
 # 网页视频捕手 (Web Video Catcher)
 
+[English](./README_EN.md) | 简体中文
+
 一款桌面端「网页视频抓取与下载」工具。内置一个捕获浏览器，访问视频页面后自动嗅探出页面里的媒体直链（MP4 / M3U8 / 分片等），按需下载，并支持音视频合并。
 
 支持抖音、快手、B站等主流视频网站，以及各类普通视频页面。
@@ -9,7 +11,7 @@
 ## 功能特性
 
 - **捕获浏览器**：内置 WebView2 窗口加载目标网址，不弹窗也能在后台捕获媒体流（manifest / 分片）。
-- **自动嗅探**：劫持页面的 `video.src` 赋值与原型 `setter`，并回收 `performance resource timing`，覆盖 B 站、抖音、TikTok、快手、小红书等动态渲染页面的媒体直链。
+- **自动嗅探**：劫持页面的 `video.src` 赋值与原型 `setter`，并回收 `performance resource timing`，覆盖 B 站、抖音、TikTok、快手等动态渲染页面的媒体直链。
 - **媒体分类**：按扩展名 / 路径特征识别 MP4、M3U8 等类型，去重后推送到列表。
 - **一键下载**：原生 HTTP 下载（基于 `reqwest`，走系统 schannel / ring，无外部依赖、报错可读），用页面 Origin 作 Referer 绕过 CDN 防盗链。
 - **音视频合并**：支持把分离的音视频流合并为单个文件。
@@ -31,8 +33,6 @@ npm run tauri dev      # 启动开发模式（带热更新）
 npm install
 npm run tauri build    # 产出 Windows 安装包（nsis）
 ```
-
-安装包默认在 `src-tauri/target/release/bundle/` 下。
 
 ### 基本操作
 
