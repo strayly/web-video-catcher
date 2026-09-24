@@ -1,11 +1,12 @@
 
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { callCommand } from "./utils/ipc";
 import type { MediaItem, DownloadTask } from "./types";
 import { mountSniffer } from "./components/sniffer";
 import { mountDownloads } from "./components/downloads";
 import { mountSettings } from "./components/settings";
-import { t, initI18n } from "./i18n";
+import { t, initI18n, getLang, setLang, LANG_LABELS } from "./i18n";
 
 const app = document.getElementById("app")!;
 app.innerHTML = `
@@ -13,6 +14,10 @@ app.innerHTML = `
     <div class="body">
       <div class="side">
         <div class="brand">📥 ${t("app.title")}</div>
+        <div class="langrow">🌐 <select id="lang-sw" title="Language / 语言">
+          <option value="zh">${LANG_LABELS.zh}</option>
+          <option value="en">${LANG_LABELS.en}</option>
+        </select></div>
         <div class="nav">
           <button class="active" data-v="sniffer"><span class="ic">🔎</span> ${t("nav.sniffer")}</button>
           <button data-v="downloads"><span class="ic">📋</span> ${t("nav.downloads")}</button>
@@ -27,6 +32,12 @@ app.innerHTML = `
     </div>
   </div>
 `;
+
+const langSw = document.getElementById("lang-sw") as HTMLSelectElement;
+langSw.value = getLang();
+langSw.addEventListener("change", () => {
+  setLang(langSw.value as "zh" | "en");
+});
 
 const snifferRoot = document.getElementById("view-sniffer")!;
 const downloadsRoot = document.getElementById("view-downloads")!;
@@ -101,7 +112,7 @@ listen<MediaItem>("sniffer://update", (e) => {
 });
 listen<DownloadTask>("download://task", (e) => {
   state.tasks.set(e.payload.id, e.payload);
-  
+
   if (activeView() === "downloads") updateDownloads(taskList());
   else if (activeView() === "sniffer") updateSniffer(state.media, taskList());
 });
@@ -119,6 +130,11 @@ callCommand<DownloadTask[]>("list_tasks").then((t) => {
 // 语言切换时刷新导航/标题与当前视图
 function applyLang() {
   document.title = t("app.title");
+  try {
+    getCurrentWindow().setTitle(t("app.title"));
+  } catch {}
+  const langSel = document.getElementById("lang-sw") as HTMLSelectElement | null;
+  if (langSel) langSel.value = getLang();
   const navMap: Record<string, string> = {
     sniffer: t("nav.sniffer"),
     downloads: t("nav.downloads"),
@@ -136,3 +152,4 @@ window.addEventListener("i18n-change", () => {
   renderActive();
 });
 initI18n();
+applyLang();

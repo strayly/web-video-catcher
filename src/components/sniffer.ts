@@ -16,7 +16,20 @@ function fmtSize(bytes: number): string {
 }
 
 export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaItem[], tasks: DownloadTask[]) => void {
-  root.innerHTML = `
+  const selected = new Set<string>();
+  let currentMedia: MediaItem[] = [];
+  let capLines: string[] = [];
+  let listEl: HTMLElement, countEl: HTMLElement, mergeHint: HTMLElement;
+
+  const pushCap = (msg: string | { zh: string; en: string }) => {
+    capLines.push(pickBi(msg));
+    if (capLines.length > 4) capLines = capLines.slice(-4);
+    (root.querySelector("#cap-bar") as HTMLElement).style.display = "flex";
+    (root.querySelector("#cap-status") as HTMLElement).textContent = capLines.join("  ·  ");
+  };
+
+  function shell() {
+    root.innerHTML = `
     <div class="statusbar">
       <span class="pill" id="pill-proxy"><span class="led off"></span> ${t("sniffer.proxyOff")}</span>
       <span class="pill warn"><span class="led"></span> ${t("sniffer.capCount", { n: 0 })}</span>
@@ -50,34 +63,130 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
     </div>
     <div id="media-list"></div>
   `;
-  const listEl = root.querySelector("#media-list") as HTMLElement;
-  const countEl = root.querySelector("#m-count") as HTMLElement;
-  const sw = root.querySelector("#sw-proxy") as HTMLElement;
-  const pill = root.querySelector("#pill-proxy") as HTMLElement;
+    listEl = root.querySelector("#media-list") as HTMLElement;
+    countEl = root.querySelector("#m-count") as HTMLElement;
+    mergeHint = root.querySelector("#merge-hint") as HTMLElement;
+    const sw = root.querySelector("#sw-proxy") as HTMLElement;
+    const pill = root.querySelector("#pill-proxy") as HTMLElement;
 
-  
-  const selected = new Set<string>();
-  
-  let currentMedia: MediaItem[] = [];
+    async function refreshProxy() {
+      try {
+        const s = await callCommand<{ running: boolean; addr: string }>("proxy_status");
+        pill.innerHTML = s.running
+          ? `<span class="led"></span> ${t("sniffer.proxyOn", { addr: s.addr })}`
+          : `<span class="led off"></span> ${t("sniffer.proxyOff")}`;
+        sw.classList.toggle("off", !s.running);
+      } catch {
+      }
+    }
+    refreshProxy();
 
-  
-  const capBar = root.querySelector("#cap-bar") as HTMLElement;
-  const capStatus = root.querySelector("#cap-status") as HTMLElement;
-  let capLines: string[] = [];
-  const pushCap = (msg: string | { zh: string; en: string }) => {
-    capLines.push(pickBi(msg));
-    if (capLines.length > 4) capLines = capLines.slice(-4);
-    capBar.style.display = "flex";
-    capStatus.textContent = capLines.join("  ·  ");
-  };
-  const unlistenCap = listen<any>("capture://status", (e) => pushCap(e.payload));
+    sw.addEventListener("click", async () => {
+      try {
+        const s = await callCommand<{ running: boolean }>("proxy_status");
+        if (s.running) await callCommand("stop_proxy");
+        else await callCommand("start_proxy");
+        refreshProxy();
+      } catch {
+      }
+    });
 
-  const openCapture = async (inject: boolean) => {
+    root.querySelector("#btn-capture")!.addEventListener("click", () => openCapture(true));
+    root.querySelector("#btn-cap-raw")!.addEventListener("click", () => openCapture(false));
+    root.querySelector("#btn-cap-close")!.addEventListener("click", async () => {
+      try {
+        await callCommand("close_capture");
+        pushCap(t("sniffer.closeOk"));
+      } catch (e) {
+        pushCap(t("sniffer.closeFailed") + String(e));
+      }
+    });
+
+    const syncSelAll = () => {
+      const boxes = listEl.querySelectorAll<HTMLInputElement>("input.msel");
+      const all = boxes.length > 0 && Array.from(boxes).every((b) => b.checked);
+      (root.querySelector("#m-selall") as HTMLInputElement).checked = all;
+    };
+    root.querySelector("#m-selall")!.addEventListener("change", (e) => {
+      const checked = (e.target as HTMLInputElement).checked;
+      listEl.querySelectorAll<HTMLInputElement>("input.msel").forEach((b) => {
+        b.checked = checked;
+        const id = b.dataset.mid!;
+        if (checked) selected.add(id);
+        else selected.delete(id);
+      });
+    });
+
+    root.querySelector("#m-merge")!.addEventListener("click", async () => {
+      const picked = currentMedia.filter((m) => selected.has(m.id));
+      if (picked.length !== 2) {
+        alert(t("sniffer.mergeNeed2", { n: picked.length }));
+        return;
+      }
+      const [a, b] = picked;
+      if ((a.kind === "Audio") === (b.kind === "Audio")) {
+        alert(
+          a.kind === "Audio"
+            ? t("sniffer.mergeBothAudio")
+            : t("sniffer.mergeBothVideo"),
+        );
+        return;
+      }
+      try {
+        await callCommand("download_pair", {
+          a: a.url,
+          b: b.url,
+          opts: { format: "best", quality: "best", out_dir: "" },
+        });
+        selected.clear();
+      } catch (e) {
+        alert(String(e));
+      }
+    });
+
+    root.querySelector("#m-del-sel")!.addEventListener("click", async () => {
+      const ids = Array.from(selected);
+      if (ids.length === 0) {
+        alert(t("sniffer.delSelEmpty"));
+        return;
+      }
+      try {
+        await callCommand("remove_media", { ids });
+        selected.clear();
+        refresh();
+      } catch (e) {
+        alert(String(e));
+      }
+    });
+    root.querySelector("#m-clear")!.addEventListener("click", async () => {
+      if (!confirm(t("sniffer.clearConfirm"))) return;
+      try {
+        await callCommand("clear_media");
+        selected.clear();
+        refresh();
+      } catch (e) {
+        alert(String(e));
+      }
+    });
+
+    listEl.querySelectorAll<HTMLInputElement>("input.msel").forEach((b) => {
+      b.checked = selected.has(b.dataset.mid!);
+      b.addEventListener("change", () => {
+        if (b.checked) selected.add(b.dataset.mid!);
+        else selected.delete(b.dataset.mid!);
+        syncSelAll();
+      });
+    });
+    bindListActions();
+    syncSelAll();
+  }
+
+  async function openCapture(inject: boolean) {
     const url = (root.querySelector("#manual-url") as HTMLInputElement).value.trim();
     const popup = (root.querySelector("#chk-popup") as HTMLInputElement).checked;
     if (!url) {
-      capBar.style.display = "flex";
-      capStatus.textContent = t("sniffer.pleasePaste");
+      (root.querySelector("#cap-bar") as HTMLElement).style.display = "flex";
+      (root.querySelector("#cap-status") as HTMLElement).textContent = t("sniffer.pleasePaste");
       return;
     }
     capLines = [];
@@ -93,139 +202,9 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
     } catch (e) {
       pushCap(t("sniffer.openFailed") + String(e));
     }
-  };
-  root.querySelector("#btn-capture")!.addEventListener("click", () => openCapture(true));
-  root.querySelector("#btn-cap-raw")!.addEventListener("click", () => openCapture(false));
-  root.querySelector("#btn-cap-close")!.addEventListener("click", async () => {
-    try {
-      await callCommand("close_capture");
-      pushCap(t("sniffer.closeOk"));
-    } catch (e) {
-      pushCap(t("sniffer.closeFailed") + String(e));
-    }
-  });
-
-  
-  const syncSelAll = () => {
-    const boxes = listEl.querySelectorAll<HTMLInputElement>("input.msel");
-    const all = boxes.length > 0 && Array.from(boxes).every((b) => b.checked);
-    (root.querySelector("#m-selall") as HTMLInputElement).checked = all;
-  };
-  root.querySelector("#m-selall")!.addEventListener("change", (e) => {
-    const checked = (e.target as HTMLInputElement).checked;
-    listEl.querySelectorAll<HTMLInputElement>("input.msel").forEach((b) => {
-      b.checked = checked;
-      const id = b.dataset.mid!;
-      if (checked) selected.add(id);
-      else selected.delete(id);
-    });
-  });
-  
-  const mergeHint = root.querySelector("#merge-hint") as HTMLElement;
-  root.querySelector("#m-merge")!.addEventListener("click", async () => {
-    const picked = currentMedia.filter((m) => selected.has(m.id));
-    if (picked.length !== 2) {
-      alert(t("sniffer.mergeNeed2", { n: picked.length }));
-      return;
-    }
-    const [a, b] = picked;
-    
-    if ((a.kind === "Audio") === (b.kind === "Audio")) {
-      alert(
-        a.kind === "Audio"
-          ? t("sniffer.mergeBothAudio")
-          : t("sniffer.mergeBothVideo"),
-      );
-      return;
-    }
-    try {
-      await callCommand("download_pair", {
-        a: a.url,
-        b: b.url,
-        opts: { format: "best", quality: "best", out_dir: "" },
-      });
-      selected.clear();
-    } catch (e) {
-      alert(String(e));
-    }
-  });
-
-  root.querySelector("#m-del-sel")!.addEventListener("click", async () => {
-    const ids = Array.from(selected);
-    if (ids.length === 0) {
-      alert(t("sniffer.delSelEmpty"));
-      return;
-    }
-    try {
-      await callCommand("remove_media", { ids });
-      selected.clear();
-      refresh();
-    } catch (e) {
-      alert(String(e));
-    }
-  });
-  root.querySelector("#m-clear")!.addEventListener("click", async () => {
-    if (!confirm(t("sniffer.clearConfirm"))) return;
-    try {
-      await callCommand("clear_media");
-      selected.clear();
-      refresh();
-    } catch (e) {
-      alert(String(e));
-    }
-  });
-
-  
-  async function refreshProxy() {
-    try {
-      const s = await callCommand<{ running: boolean; addr: string }>("proxy_status");
-      pill.innerHTML = s.running
-        ? `<span class="led"></span> ${t("sniffer.proxyOn", { addr: s.addr })}`
-        : `<span class="led off"></span> ${t("sniffer.proxyOff")}`;
-      sw.classList.toggle("off", !s.running);
-    } catch {
-      
-    }
   }
-  refreshProxy();
 
-  sw.addEventListener("click", async () => {
-    try {
-      const s = await callCommand<{ running: boolean }>("proxy_status");
-      if (s.running) await callCommand("stop_proxy");
-      else await callCommand("start_proxy");
-      refreshProxy();
-    } catch {
-      
-    }
-  });
-
-  
-  return (media: MediaItem[], tasks: DownloadTask[]) => {
-    currentMedia = media;
-    
-    const hasVideo = media.some((m) => m.kind !== "Audio");
-    const hasAudio = media.some((m) => m.kind === "Audio");
-    mergeHint.style.display = hasVideo && hasAudio ? "flex" : "none";
-    countEl.textContent = media.length ? `(${media.length})` : "";
-    listEl.innerHTML = media.length
-      ? media.map((m) => cardHtml(m, latestTask(m.url, tasks), selected.has(m.id))).join("")
-      : `<div class="empty">${t("sniffer.empty")}</div>`;
-    
-    listEl.querySelectorAll<HTMLInputElement>("input.msel").forEach((b) => {
-      b.checked = selected.has(b.dataset.mid!);
-      b.addEventListener("change", () => {
-        if (b.checked) selected.add(b.dataset.mid!);
-        else selected.delete(b.dataset.mid!);
-        syncSelAll();
-      });
-    });
-    
-    const live = new Set(media.map((m) => m.id));
-    Array.from(selected).forEach((id) => {
-      if (!live.has(id)) selected.delete(id);
-    });
-    syncSelAll();
+  function bindListActions() {
     listEl.querySelectorAll<HTMLButtonElement>("[data-dl]").forEach((b) =>
       b.addEventListener("click", () =>
         callCommand("download", { url: b.dataset.dl, opts: { format: "best", quality: "best", out_dir: "" } }),
@@ -255,15 +234,51 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
         }
       }),
     );
+  }
+
+  const unlistenCap = listen<any>("capture://status", (e) => pushCap(e.payload));
+  void unlistenCap;
+
+  window.addEventListener("i18n-change", () => {
+    capLines = [];
+    shell();
+  });
+
+  shell();
+
+  return (media: MediaItem[], tasks: DownloadTask[]) => {
+    currentMedia = media;
+    const hasVideo = media.some((m) => m.kind !== "Audio");
+    const hasAudio = media.some((m) => m.kind === "Audio");
+    mergeHint.style.display = hasVideo && hasAudio ? "flex" : "none";
+    countEl.textContent = media.length ? `(${media.length})` : "";
+    listEl.innerHTML = media.length
+      ? media.map((m) => cardHtml(m, latestTask(m.url, tasks), selected.has(m.id))).join("")
+      : `<div class="empty">${t("sniffer.empty")}</div>`;
+
+    listEl.querySelectorAll<HTMLInputElement>("input.msel").forEach((b) => {
+      b.checked = selected.has(b.dataset.mid!);
+      b.addEventListener("change", () => {
+        if (b.checked) selected.add(b.dataset.mid!);
+        else selected.delete(b.dataset.mid!);
+      });
+    });
+
+    const live = new Set(media.map((m) => m.id));
+    Array.from(selected).forEach((id) => {
+      if (!live.has(id)) selected.delete(id);
+    });
+    (root.querySelector("#m-selall") as HTMLInputElement).checked =
+      listEl.querySelectorAll<HTMLInputElement>("input.msel").length > 0 &&
+      Array.from(listEl.querySelectorAll<HTMLInputElement>("input.msel")).every((b) => b.checked);
+    bindListActions();
   };
 }
-
 
 function latestTask(url: string, tasks: DownloadTask[]): DownloadTask | null {
   let best: DownloadTask | null = null;
   let bestTs = -1;
   for (const t of tasks) {
-    
     if (t.url !== url && t.pair_url !== url) continue;
     const ts = Number(t.id.replace("task_", "")) || 0;
     if (ts >= bestTs) {
@@ -284,7 +299,6 @@ function cardHtml(m: MediaItem, task: DownloadTask | null, checked: boolean): st
         : m.kind === "Audio"
           ? "badge audio"
           : "badge";
-  
   const quality = m.quality && !/^(未知|Unknown)$/i.test(m.quality) ? m.quality : "";
   const size = fmtSize(m.size_bytes) || t("media.sizeUnknown");
   const sub = `<span class="${cls}">${badge}</span> ${[quality, size, t("media.from", { source: m.source })]
@@ -292,7 +306,6 @@ function cardHtml(m: MediaItem, task: DownloadTask | null, checked: boolean): st
     .join(" · ")}`;
   const sel = `<label class="msel"><input type="checkbox" class="msel" data-mid="${escapeAttr(m.id)}" ${checked ? "checked" : ""} /></label>`;
 
-  
   if (!task) {
     return `<div class="card">
       ${sel}
@@ -308,7 +321,6 @@ function cardHtml(m: MediaItem, task: DownloadTask | null, checked: boolean): st
   const pct = Math.round(task.progress * 100);
   const copyBtn = `<button class="btn ghost" data-copy="${escapeAttr(m.url)}">${t("sniffer.copy")}</button>`;
 
-  
   if (task.status === "Queued" || task.status === "Downloading" || task.status === "Merging") {
     const label =
       task.status === "Queued"
@@ -331,7 +343,6 @@ function cardHtml(m: MediaItem, task: DownloadTask | null, checked: boolean): st
     </div>`;
   }
 
-  
   if (task.status === "Done") {
     const fp = task.file_path || "";
     const revealTarget = fp || task.out_path;
@@ -348,7 +359,6 @@ function cardHtml(m: MediaItem, task: DownloadTask | null, checked: boolean): st
     </div>`;
   }
 
-  
   const errLine = task.error
     ? `<div class="errline" title="${escapeAttr(task.error)}">${escapeHtml(task.error)}</div>`
     : "";

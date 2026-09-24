@@ -92,9 +92,6 @@ const ZH: Dict = {
   "set.engineNotTested": "未检测",
   "set.engineInfo": "yt-dlp: {ok} ({ver})  ffmpeg: {ok2}",
   "set.noteEngine": "捕获到的视频直链由程序内置下载器直连取流(带浏览器同款请求头), 不需要 yt-dlp; yt-dlp 只用于解析网页地址、下载 m3u8 分片并合并。",
-  "set.language": "语言",
-  "set.langZh": "中文",
-  "set.langEn": "English",
 
   "cap.navigating": "导航: {u}",
   "cap.loading": "{stage}: {url}",
@@ -105,7 +102,6 @@ const ZH: Dict = {
 
   "common.ok": "OK",
   "common.missing": "缺失",
-  "set.uiGroup": "界面",
 };
 
 const EN: Dict = {
@@ -194,9 +190,6 @@ const EN: Dict = {
   "set.engineNotTested": "Not checked",
   "set.engineInfo": "yt-dlp: {ok} ({ver})  ffmpeg: {ok2}",
   "set.noteEngine": "Captured direct links are fetched by the built-in downloader (with browser-like headers); yt-dlp is only for parsing pages and merging m3u8.",
-  "set.language": "Language",
-  "set.langZh": "中文",
-  "set.langEn": "English",
 
   "cap.navigating": "Navigating: {u}",
   "cap.loading": "{stage}: {url}",
@@ -207,7 +200,6 @@ const EN: Dict = {
 
   "common.ok": "OK",
   "common.missing": "Missing",
-  "set.uiGroup": "UI",
 };
 
 const DICTS: Record<Lang, Dict> = { zh: ZH, en: EN };
