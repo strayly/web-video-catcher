@@ -49,6 +49,9 @@ const INJECT: &str = r#"(function(){
   var extRe = /\.(mp4|m4v|m4s|m3u8|mpd|ts|webm|mkv|flv|mp3|m4a|aac)(\?|#|$)/i;
   // 无扩展名的媒体直链路径特征: TikTok/抖音系取流地址形如 /video/tos/... , B 站是 /upgcxcode/...
   var pathRe = /\/(video\/tos|aweme\/v1\/play|upgcxcode)\//i;
+  // 小红书取流地址: 域名 xhscdn.com、路径 /stream/...、content-type 常是 application/octet-stream 且无 .mp4 扩展,
+  // 上面的 mediaRe/extRe/pathRe 全都不命中, 单独加一条(图片/JS 走的是 /platform/ /formula-static/, 不会误伤)。
+  var xhsRe = /xhscdn\.com\/stream\//i;
   var badRe = /^(text|image|font)\/|application\/(json|javascript|xml|xhtml|pdf|zip|wasm)/i;
   try {
     var of = window.fetch;
@@ -57,7 +60,7 @@ const INJECT: &str = r#"(function(){
       var method = (init && init.method) || (input && input.method) || 'GET';
       return of.apply(this, arguments).then(function(r){
         var ct = ''; try { ct = r.headers && r.headers.get ? r.headers.get('content-type') : ''; } catch(e){}
-        if (url && (mediaRe.test(ct) || extRe.test(url) || pathRe.test(url))) report(url, ct, method);
+        if (url && (mediaRe.test(ct) || extRe.test(url) || pathRe.test(url) || xhsRe.test(url))) report(url, ct, method);
         return r;
       });
     };
@@ -70,7 +73,7 @@ const INJECT: &str = r#"(function(){
       var self = this;
       this.addEventListener('load', function(){
         var ct = ''; try { ct = self.getResponseHeader ? self.getResponseHeader('content-type') : ''; } catch(e){}
-        if (self.__capUrl && (mediaRe.test(ct) || extRe.test(self.__capUrl) || pathRe.test(self.__capUrl))) report(self.__capUrl, ct, self.__capM);
+        if (self.__capUrl && (mediaRe.test(ct) || extRe.test(self.__capUrl) || pathRe.test(self.__capUrl) || xhsRe.test(self.__capUrl))) report(self.__capUrl, ct, self.__capM);
       });
       return os.apply(this, arguments);
     };
@@ -111,7 +114,7 @@ const INJECT: &str = r#"(function(){
       var list = performance.getEntriesByType ? performance.getEntriesByType('resource') : [];
       for (var i = 0; i < list.length; i++) {
         var u = (list[i] && list[i].name) || '';
-        if (u && (extRe.test(u) || pathRe.test(u))) report(u, '');
+        if (u && (extRe.test(u) || pathRe.test(u) || xhsRe.test(u))) report(u, '');
       }
     }
     setInterval(scanPerf, 1500);
@@ -156,8 +159,13 @@ const INJECT: &str = r#"(function(){
       if (!window.__capAny) {
         try {
           var ev = window.__TAURI__ && window.__TAURI__.event;
-          if (ev && ev.emit) ev.emit('capture://status',
-            '⏳ 12 秒内未检测到媒体直链: 请勾选「弹窗」让捕获窗口可见, 并在窗口内点击播放(TikTok 等站点需可见窗口才发取流请求)');
+          if (ev && ev.emit) {
+            var tip = '⏳ 12 秒内未检测到媒体直链: 请勾选「弹窗」让捕获窗口可见, 并在窗口内点击播放(TikTok 等站点需可见窗口才发取流请求)';
+            if (location.host.indexOf('xiaohongshu.com') >= 0) {
+              tip = '⏳ 小红书视频需登录后才能播放: 请勾选「弹窗」, 在弹出的窗口里登录小红书, 登录成功后再点「捕获」重试';
+            }
+            ev.emit('capture://status', tip);
+          }
         } catch(e){}
       }
     }, 12000);

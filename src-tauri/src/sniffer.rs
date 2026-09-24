@@ -66,7 +66,7 @@ const TS_EXTS: [&str; 2] = ["ts", "m2ts"];
 
 
 
-const TRUSTED_MEDIA_CDNS: [&str; 8] = [
+const TRUSTED_MEDIA_CDNS: [&str; 9] = [
     "douyinvod.com",
     "bytecdntp.com",
     "zjcdn.com",
@@ -75,6 +75,7 @@ const TRUSTED_MEDIA_CDNS: [&str; 8] = [
     "tiktokcdn.com",
     "tiktokcdn-us.com",
     "tiktokcdn-eu.com",
+    "xhscdn.com",
 ];
 
 

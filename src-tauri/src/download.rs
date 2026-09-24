@@ -161,7 +161,7 @@ fn is_direct_media(url: &str) -> bool {
     
     
     
-    const CDNS: [&str; 18] = [
+    const CDNS: [&str; 19] = [
         "douyinvod.com",
         "bytecdntp.com",
         "douyinpic.com",
@@ -183,6 +183,7 @@ fn is_direct_media(url: &str) -> bool {
         "tiktok.com",
         "tiktokv.com",
         "byteoversea.com",
+        "xhscdn.com",
     ];
     let host = low.split("://").nth(1).unwrap_or("").split('/').next().unwrap_or("");
     CDNS.iter().any(|d| host == *d || host.ends_with(&format!(".{d}")))
