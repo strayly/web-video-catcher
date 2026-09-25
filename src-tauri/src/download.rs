@@ -193,6 +193,17 @@ async fn run_task(
 
 
 
+fn is_youtube(url: &str) -> bool {
+    let low = url.trim().to_ascii_lowercase();
+    let host = low.split("://").nth(1).unwrap_or("").split(['/', '?', '#']).next().unwrap_or("");
+    host == "youtube.com"
+        || host.ends_with(".youtube.com")
+        || host == "youtu.be"
+        || host.ends_with(".youtu.be")
+        || host == "youtube-nocookie.com"
+        || host.ends_with(".youtube-nocookie.com")
+}
+
 fn is_direct_media(url: &str) -> bool {
     let low = url.trim().to_ascii_lowercase();
     if !(low.starts_with("http://") || low.starts_with("https://")) {
@@ -945,6 +956,16 @@ async fn run_yt_dlp(
     } else {
         format.clone()
     };
+    let yt_attempts: Vec<Option<String>> = if is_youtube(&url) {
+        vec![
+            Some("youtube:player_client=default,web_embedded".into()),
+            Some("youtube:player_client=tv,web_embedded;player_skip=webpage".into()),
+            Some("youtube:player_client=android".into()),
+        ]
+    } else {
+        vec![None]
+    };
+    for (att, extra_ea) in yt_attempts.iter().enumerate() {
     let mut cmd = TokioCommand::new("yt-dlp");
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
@@ -988,6 +1009,12 @@ async fn run_yt_dlp(
     }
     if let Some(b) = &cookie_browser {
         cmd.arg("--cookies-from-browser").arg(b);
+    }
+    if is_youtube(&url) {
+        cmd.arg("--js-runtimes").arg("node");
+        if let Some(ea) = extra_ea {
+            cmd.arg("--extractor-args").arg(ea);
+        }
     }
     cmd.arg(&url);
     cmd.stdout(Stdio::piped());
@@ -1063,13 +1090,20 @@ async fn run_yt_dlp(
         } else {
             friendly_err(&last_err)
         };
+        let is403 = last_err.contains("403") || last_err.to_ascii_lowercase().contains("forbidden");
+        if is403 && att + 1 < yt_attempts.len() {
+            continue;
+        }
         state.set_error(&id, msg);
         state.set_status(&id, TaskStatus::Failed);
         emit_task(&app, &state, &id);
         return;
     }
+    break;
+    }
 
-    
+
+
     match find_output(&dir, &id) {
         Some(p) if valid_media(&p) => {
             let fp = finalize_name(&p, &state, &url, &dir, None);
@@ -1127,6 +1161,11 @@ pub async fn resolve_page(app: AppHandle, state: AppState, url: String) {
     }
     if let Some(b) = state.cookie_browser() {
         cmd.arg("--cookies-from-browser").arg(b);
+    }
+    if is_youtube(&url) {
+        cmd.arg("--js-runtimes").arg("node");
+        cmd.arg("--extractor-args")
+            .arg("youtube:player_client=default,web_embedded");
     }
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
@@ -1237,8 +1276,8 @@ fn friendly_err(msg: &str) -> String {
     let m = msg.to_ascii_lowercase();
     if m.contains("403") || m.contains("forbidden") || m.contains("412") {
         bi(
-            &format!("{msg} —— CDN 拒绝访问(防盗链/签名链接)。请改用「🔧 解析」下载(会自动携带内置浏览器 cookie), 或勾选「弹窗」播放一次后再试。"),
-            &format!("{msg} — CDN refused access (hotlink/signed URL). Use \"🔧 Parse\" instead (it carries the built-in browser cookie automatically), or enable \"visible window\", play once, then retry."),
+            &format!("{msg} —— CDN 拒绝访问(签名/风控)。已自动换客户端重试仍失败: 请更新 yt-dlp(pip install -U yt-dlp yt-dlp-ejs)并确保 node 在 PATH 中, 再试; 或勾选「弹窗」播放一次后下载。"),
+            &format!("{msg} — CDN refused access (signature/bot risk). Client auto-retry exhausted: update yt-dlp (pip install -U yt-dlp yt-dlp-ejs), make sure node is in PATH, then retry; or enable \"visible window\", play once, then download."),
         )
     } else if msg.contains("cookies") {
         bi(
