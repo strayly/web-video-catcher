@@ -105,13 +105,17 @@ pub fn enqueue(app: AppHandle, state: AppState, url: String, format: String, out
 
     let spawned_id = id.clone();
     tauri::async_runtime::spawn(async move {
-        let cookie_header = tauri::async_runtime::spawn_blocking({
+        let (cookie_header, cookies_txt) = tauri::async_runtime::spawn_blocking({
             let app = app.clone();
             let url = url.clone();
-            move || webview_cookie_header(&app, &url)
+            move || {
+                let header = webview_cookie_header(&app, &url);
+                let txt = webview_cookies_txt(&app, &url);
+                (header, txt)
+            }
         })
         .await
-        .unwrap_or(None);
+        .unwrap_or((None, None));
         run_task(
             app,
             state,
@@ -122,6 +126,7 @@ pub fn enqueue(app: AppHandle, state: AppState, url: String, format: String, out
             referer,
             cookie,
             cookie_header,
+            cookies_txt,
         )
         .await;
     });
@@ -140,9 +145,10 @@ async fn run_task(
     referer: Option<String>,
     cookie: Option<String>,
     cookie_header: Option<String>,
+    cookies_txt: Option<String>,
 ) {
     if !is_direct_media(&url) {
-        run_yt_dlp(app, state, id, url, format, dir, referer, cookie, cookie_header).await;
+        run_yt_dlp(app, state, id, url, format, dir, referer, cookie, cookie_header, cookies_txt).await;
         return;
     }
     run_direct(
@@ -155,7 +161,7 @@ async fn run_task(
         cookie_header.clone(),
     )
     .await;
-    
+
     if state.task(&id).is_none() || state.is_cancelled(&id) {
         return;
     }
@@ -163,11 +169,11 @@ async fn run_task(
         return;
     }
     let first = state.task(&id).map(|t| t.error).unwrap_or_default();
-    
+
     state.set_error(&id, String::new());
     state.set_status(&id, TaskStatus::Queued);
     emit_task(&app, &state, &id);
-    run_yt_dlp(app.clone(), state.clone(), id.clone(), url, format, dir, referer, cookie, cookie_header).await;
+    run_yt_dlp(app.clone(), state.clone(), id.clone(), url, format, dir, referer, cookie, cookie_header, cookies_txt).await;
     if state.status_of(&id) == TaskStatus::Failed {
         let second = state.task(&id).map(|t| t.error).unwrap_or_default();
         let (s_zh, s_en) = bi_part(&second);
@@ -279,6 +285,42 @@ pub fn webview_cookie_header(app: &AppHandle, url: &str) -> Option<String> {
     } else {
         Some(pairs.join("; "))
     }
+}
+
+pub fn webview_cookies_txt(app: &AppHandle, url: &str) -> Option<String> {
+    let parsed: Url = url.parse().ok()?;
+    let host = parsed.host_str()?.trim_start_matches('.').to_string();
+    if host.is_empty() {
+        return None;
+    }
+    let domain = format!(".{host}");
+    let mut seen: Vec<String> = Vec::new();
+    let mut out = String::from("# Netscape HTTP Cookie File\n");
+    for (_label, w) in app.webview_windows() {
+        let cookies = match w.cookies_for_url(parsed.clone()) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        for c in cookies {
+            let (n, v) = (c.name().to_string(), c.value().to_string());
+            if n.is_empty() || seen.iter().any(|s| *s == n) {
+                continue;
+            }
+            seen.push(n.clone());
+            out.push_str(&format!("{domain}\tTRUE\t/\tTRUE\t2145916800\t{n}\t{v}\n"));
+        }
+    }
+    if seen.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
+}
+
+fn write_cookies_file(content: &str) -> Option<std::path::PathBuf> {
+    let p = std::env::temp_dir().join("wvc_cookies.txt");
+    std::fs::write(&p, content).ok()?;
+    Some(p)
 }
 
 
@@ -889,6 +931,7 @@ async fn run_yt_dlp(
     referer: Option<String>,
     cookie_browser: Option<String>,
     cookie_header: Option<String>,
+    cookies_txt: Option<String>,
 ) {
     
     cleanup_parts(&dir, &id);
@@ -931,8 +974,17 @@ async fn run_yt_dlp(
     if let Some(r) = &referer {
         cmd.arg("--add-header").arg(format!("Referer: {r}"));
     }
-    if let Some(c) = &cookie_header {
-        cmd.arg("--add-header").arg(format!("Cookie: {c}"));
+    let mut cookies_file: Option<std::path::PathBuf> = None;
+    if let Some(txt) = &cookies_txt {
+        if let Some(p) = write_cookies_file(txt) {
+            cookies_file = Some(p.clone());
+            cmd.arg("--cookies").arg(&p);
+        }
+    }
+    if cookies_file.is_none() {
+        if let Some(c) = &cookie_header {
+            cmd.arg("--add-header").arg(format!("Cookie: {c}"));
+        }
     }
     if let Some(b) = &cookie_browser {
         cmd.arg("--cookies-from-browser").arg(b);
@@ -1061,6 +1113,18 @@ pub async fn resolve_page(app: AppHandle, state: AppState, url: String) {
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
     cmd.arg("-J").arg("--no-playlist").arg(&url);
+    let cookies_txt = tauri::async_runtime::spawn_blocking({
+        let app = app.clone();
+        let u = url.clone();
+        move || webview_cookies_txt(&app, &u)
+    })
+    .await
+    .unwrap_or(None);
+    if let Some(txt) = &cookies_txt {
+        if let Some(p) = write_cookies_file(txt) {
+            cmd.arg("--cookies").arg(&p);
+        }
+    }
     if let Some(b) = state.cookie_browser() {
         cmd.arg("--cookies-from-browser").arg(b);
     }
@@ -1088,6 +1152,9 @@ pub async fn resolve_page(app: AppHandle, state: AppState, url: String) {
                     });
                     if let Some(arr) = v["formats"].as_array() {
                         for f in arr {
+                            if f["ext"].as_str() == Some("mhtml") {
+                                continue;
+                            }
                             let fid = match f["format_id"].as_str() {
                                 Some(x) if !x.is_empty() => x.to_string(),
                                 _ => continue,
@@ -1170,8 +1237,8 @@ fn friendly_err(msg: &str) -> String {
     let m = msg.to_ascii_lowercase();
     if m.contains("403") || m.contains("forbidden") || m.contains("412") {
         bi(
-            &format!("{msg} —— CDN 拒绝访问(防盗链)。已自动带 Referer/UA; 仍失败请勾选「弹窗」在可见窗口播放一次, 再点下载。"),
-            &format!("{msg} — CDN refused access (hotlink protection). Referer/UA were sent automatically; if it still fails, enable \"visible window\", play once, then download."),
+            &format!("{msg} —— CDN 拒绝访问(防盗链/签名链接)。请改用「🔧 解析」下载(会自动携带内置浏览器 cookie), 或勾选「弹窗」播放一次后再试。"),
+            &format!("{msg} — CDN refused access (hotlink/signed URL). Use \"🔧 Parse\" instead (it carries the built-in browser cookie automatically), or enable \"visible window\", play once, then retry."),
         )
     } else if msg.contains("cookies") {
         bi(

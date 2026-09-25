@@ -59,19 +59,21 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
           : `${f.quality} · ${f.ext} · ${f.kind === "Audio" ? t("kind.audio") : t("kind.other")}${f.size > 0 ? " · " + (f.size / 1048576).toFixed(1) + "MB" : ""}`;
       row.innerHTML = `<span class="rp-fmt">${escapeHtml(label)}</span><button class="btn primary small rp-dl">${t("sniffer.fmtDownload")}</button>`;
       row.querySelector(".rp-dl")!.addEventListener("click", async () => {
+        const btn = row.querySelector<HTMLButtonElement>(".rp-dl")!;
         try {
-          
           const sel =
             f.format_id === "best"
               ? "best"
-              
+
               : f.kind === "Audio"
                 ? f.format_id
-                
+
                 : `${f.format_id}+bestaudio`;
           await callCommand("download", { url: p.url, opts: { format: sel, quality: "best", out_dir: "" } });
-          panel.style.display = "none";
+          btn.textContent = "✓ " + t("sniffer.fmtAdded");
+          btn.disabled = true;
         } catch (err) {
+          btn.disabled = false;
           alert(errText(String(err)));
         }
       });
@@ -84,6 +86,24 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
     (root.querySelector("#rp-title") as HTMLElement).textContent = t("sniffer.resolveFailed");
     (root.querySelector("#rp-list") as HTMLElement).innerHTML = `<div class="info" style="color:#e5484d">${escapeHtml(errText(e.payload.error))}</div>`;
   });
+
+  // 打开解析面板并请求后端解析(yt-dlp)
+  const doResolve = async (url: string) => {
+    if (!url) {
+      alert(t("sniffer.pleasePaste"));
+      return;
+    }
+    const panel = root.querySelector("#resolve-panel") as HTMLElement | null;
+    if (!panel) return;
+    (root.querySelector("#rp-title") as HTMLElement).textContent = t("sniffer.resolving");
+    (root.querySelector("#rp-list") as HTMLElement).innerHTML = "";
+    panel.style.display = "flex";
+    try {
+      await callCommand("resolve_page", { url });
+    } catch (e) {
+      (root.querySelector("#rp-list") as HTMLElement).innerHTML = `<div class="info" style="color:#e5484d">${escapeHtml(errText(String(e)))}</div>`;
+    }
+  };
 
   function shell() {
     root.innerHTML = `
@@ -140,18 +160,7 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
     });
     root.querySelector("#btn-resolve")!.addEventListener("click", async () => {
       const url = (root.querySelector("#manual-url") as HTMLInputElement).value.trim();
-      if (!url) {
-        alert(t("sniffer.pleasePaste"));
-        return;
-      }
-      (root.querySelector("#rp-title") as HTMLElement).textContent = t("sniffer.resolving");
-      (root.querySelector("#rp-list") as HTMLElement).innerHTML = "";
-      resolvePanel.style.display = "flex";
-      try {
-        await callCommand("resolve_page", { url });
-      } catch (e) {
-        (root.querySelector("#rp-list") as HTMLElement).innerHTML = `<div class="info" style="color:#e5484d">${escapeHtml(errText(String(e)))}</div>`;
-      }
+      await doResolve(url);
     });
 
     root.querySelector("#btn-capture")!.addEventListener("click", () => openCapture(true));
@@ -269,9 +278,18 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
 
   function bindListActions() {
     listEl.querySelectorAll<HTMLButtonElement>("[data-dl]").forEach((b) =>
-      b.addEventListener("click", () =>
-        callCommand("download", { url: b.dataset.dl, opts: { format: "best", quality: "best", out_dir: "" } }),
-      ),
+      b.addEventListener("click", () => {
+        const u = b.dataset.dl || "";
+        // YouTube 的 googlevideo 直链带签名保护, 直接下载必然 403, 自动转走「解析」
+        if (/googlevideo\.com|youtube\.com\/videoplayback|youtube\.com\/api\/manifest/i.test(u)) {
+          const page = (root.querySelector("#manual-url") as HTMLInputElement)?.value.trim() || "";
+          if (page) {
+            void doResolve(page);
+            return;
+          }
+        }
+        void callCommand("download", { url: u, opts: { format: "best", quality: "best", out_dir: "" } });
+      }),
     );
     listEl.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((b) =>
       b.addEventListener("click", () => navigator.clipboard.writeText(b.dataset.copy || "")),
