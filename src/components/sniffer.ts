@@ -41,6 +41,41 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
     (root.querySelector("#cap-status") as HTMLElement).textContent = capLines.join("  ·  ");
   };
 
+  // 解析事件(全局只注册一次): Rust 的 resolve_page 把页面 URL + 清晰度列表推回来
+  interface RFormat { format_id: string; quality: string; ext: string; kind: string; size: number }
+  listen<{ url: string; title: string; formats: RFormat[] }>("resolve://formats", (e) => {
+    const p = e.payload;
+    const panel = root.querySelector("#resolve-panel") as HTMLElement | null;
+    if (!panel) return;
+    (root.querySelector("#rp-title") as HTMLElement).textContent = p.title;
+    const list = root.querySelector("#rp-list") as HTMLElement;
+    list.innerHTML = "";
+    for (const f of p.formats) {
+      const row = document.createElement("div");
+      row.className = "rp-row";
+      const label =
+        f.format_id === "best"
+          ? t("sniffer.fmtBest")
+          : `${f.quality} · ${f.ext} · ${f.kind === "Audio" ? t("kind.audio") : t("kind.other")}${f.size > 0 ? " · " + (f.size / 1048576).toFixed(1) + "MB" : ""}`;
+      row.innerHTML = `<span class="rp-fmt">${escapeHtml(label)}</span><button class="btn primary small rp-dl">${t("sniffer.fmtDownload")}</button>`;
+      row.querySelector(".rp-dl")!.addEventListener("click", async () => {
+        try {
+          await callCommand("download", { url: p.url, opts: { format: f.format_id, quality: "best", out_dir: "" } });
+          panel.style.display = "none";
+        } catch (err) {
+          alert(errText(String(err)));
+        }
+      });
+      list.appendChild(row);
+    }
+  });
+  listen<{ url: string; error: string }>("resolve://error", (e) => {
+    const panel = root.querySelector("#resolve-panel") as HTMLElement | null;
+    if (!panel) return;
+    (root.querySelector("#rp-title") as HTMLElement).textContent = t("sniffer.resolveFailed");
+    (root.querySelector("#rp-list") as HTMLElement).innerHTML = `<div class="info" style="color:#e5484d">${escapeHtml(errText(e.payload.error))}</div>`;
+  });
+
   function shell() {
     root.innerHTML = `
     <div class="statusbar">
@@ -49,9 +84,14 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
     <div class="manual">
       <input id="manual-url" type="text" placeholder="${t("sniffer.urlPlaceholder")}" />
       <button class="btn primary cap" id="btn-capture">🧲 ${t("sniffer.btnCapture")}</button>
+      <button class="btn ghost" id="btn-resolve">🔧 ${t("sniffer.btnResolve")}</button>
       <label class="chk" title="${t("sniffer.popupTitle")}">
         <input type="checkbox" id="chk-popup" /> ${t("sniffer.chkPopup")}
       </label>
+    </div>
+    <div class="resolve-panel" id="resolve-panel" style="display:none">
+      <div class="rp-head"><span id="rp-title"></span><span class="rp-close" id="btn-resolve-close">✕</span></div>
+      <div class="rp-list" id="rp-list"></div>
     </div>
     <div class="capbar" id="cap-bar" style="display:none">
       <span class="cap-text" id="cap-status">${t("sniffer.capOpening")}</span>
@@ -82,6 +122,26 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
       try {
         await callCommand("open_url", { url: "https://www.licstack.com/" });
       } catch {
+      }
+    });
+
+    const resolvePanel = root.querySelector("#resolve-panel") as HTMLElement;
+    (root.querySelector("#btn-resolve-close") as HTMLElement).addEventListener("click", () => {
+      resolvePanel.style.display = "none";
+    });
+    root.querySelector("#btn-resolve")!.addEventListener("click", async () => {
+      const url = (root.querySelector("#manual-url") as HTMLInputElement).value.trim();
+      if (!url) {
+        alert(t("sniffer.pleasePaste"));
+        return;
+      }
+      (root.querySelector("#rp-title") as HTMLElement).textContent = t("sniffer.resolving");
+      (root.querySelector("#rp-list") as HTMLElement).innerHTML = "";
+      resolvePanel.style.display = "flex";
+      try {
+        await callCommand("resolve_page", { url });
+      } catch (e) {
+        (root.querySelector("#rp-list") as HTMLElement).innerHTML = `<div class="info" style="color:#e5484d">${escapeHtml(errText(String(e)))}</div>`;
       }
     });
 

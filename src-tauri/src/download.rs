@@ -13,8 +13,24 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command as TokioCommand;
 use crate::capture::DESKTOP_UA;
 use crate::schema::*;
-use crate::sniffer::{classify, host_of};
+use crate::sniffer::host_of;
 use crate::state::AppState;
+
+#[derive(serde::Serialize, Clone)]
+struct ResolvedFormat {
+    format_id: String,
+    quality: String,
+    ext: String,
+    kind: String,
+    size: i64,
+}
+
+#[derive(serde::Serialize)]
+struct ResolvedPage {
+    url: String,
+    title: String,
+    formats: Vec<ResolvedFormat>,
+}
 
 
 /// 生成双语提示文本: 序列化为 {"zh":..,"en":..} JSON 字符串, 由前端解析选显。
@@ -1045,8 +1061,57 @@ pub async fn resolve_page(app: AppHandle, state: AppState, url: String) {
             let s = String::from_utf8_lossy(&out.stdout);
             match serde_json::from_str::<serde_json::Value>(&s) {
                 Ok(v) => {
-                    push_formats(&app, &state, &v);
-                    let _ = app.emit("resolve://done", &url);
+                    let title = v["title"].as_str().unwrap_or("未知标题").to_string();
+                    let page_url = v["webpage_url"]
+                        .as_str()
+                        .or_else(|| v["url"].as_str())
+                        .unwrap_or(&url)
+                        .to_string();
+                    let mut formats: Vec<ResolvedFormat> = Vec::new();
+                    formats.push(ResolvedFormat {
+                        format_id: "best".into(),
+                        quality: "best".into(),
+                        ext: "mp4".into(),
+                        kind: "Video".into(),
+                        size: -1,
+                    });
+                    if let Some(arr) = v["formats"].as_array() {
+                        for f in arr {
+                            let fid = match f["format_id"].as_str() {
+                                Some(x) if !x.is_empty() => x.to_string(),
+                                _ => continue,
+                            };
+                            let ext = f["ext"].as_str().unwrap_or("").to_string();
+                            let height = f["height"].as_u64().unwrap_or(0);
+                            let quality = if height > 0 {
+                                format!("{}P", height)
+                            } else if f["acodec"].as_str() == Some("none") {
+                                "视频流".into()
+                            } else {
+                                "音频流".into()
+                            };
+                            let kind = if f["vcodec"].as_str() == Some("none") {
+                                "Audio"
+                            } else {
+                                "Video"
+                            }
+                            .to_string();
+                            let size = f["filesize"].as_i64().unwrap_or(-1);
+                            formats.push(ResolvedFormat {
+                                format_id: fid,
+                                quality,
+                                ext,
+                                kind,
+                                size,
+                            });
+                        }
+                    }
+                    let payload = ResolvedPage {
+                        url: page_url,
+                        title,
+                        formats,
+                    };
+                    let _ = app.emit("resolve://formats", &payload);
                 }
                 Err(e) => emit_resolve_error(&app, &url, &format!("返回内容不是有效 JSON: {e}")),
             }
@@ -1104,46 +1169,6 @@ fn friendly_err(msg: &str) -> String {
         )
     } else {
         msg.to_string()
-    }
-}
-
-
-fn push_formats(app: &AppHandle, state: &AppState, v: &serde_json::Value) {
-    let title = v["title"].as_str().unwrap_or("未知标题").to_string();
-    let source = v["webpage_url"]
-        .as_str()
-        .or_else(|| v["url"].as_str())
-        .map(host_of)
-        .unwrap_or_default();
-    if let Some(formats) = v["formats"].as_array() {
-        for f in formats {
-            let furl = match f["url"].as_str() {
-                Some(u) if !u.is_empty() => u.to_string(),
-                _ => continue,
-            };
-            let format_id = f["format_id"].as_str().unwrap_or("").to_string();
-            let ext = f["ext"].as_str().unwrap_or("").to_string();
-            let height = f["height"].as_u64().unwrap_or(0);
-            let quality = if height > 0 {
-                format!("{}P", height)
-            } else {
-                "未知".into()
-            };
-            let kind = classify(&furl, &ext).map(|(k, _)| k).unwrap_or(MediaKind::Other);
-            let item = MediaItem {
-                id: format!("m_{}_{}", now_ms(), format_id),
-                url: furl,
-                title: title.clone(),
-                source: source.clone(),
-                kind,
-                quality,
-                size_bytes: f["filesize"].as_i64().unwrap_or(-1),
-                status: "new".into(),
-            };
-            if state.push_media(item.clone()) {
-                let _ = app.emit("sniffer://new", &item);
-            }
-        }
     }
 }
 
