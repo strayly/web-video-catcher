@@ -894,11 +894,19 @@ async fn run_yt_dlp(
     cleanup_parts(&dir, &id);
     
     let out_tmpl = format!("{}/{}__%(title).60s.%(ext)s", dir, id);
+    
+    let yt_format = if format.trim() == "best" {
+        
+        
+        "bestvideo+bestaudio/best".to_string()
+    } else {
+        format.clone()
+    };
     let mut cmd = TokioCommand::new("yt-dlp");
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
     cmd.arg("-f")
-        .arg(&format)
+        .arg(&yt_format)
         .arg("-o")
         .arg(&out_tmpl)
         .arg("--no-playlist")
@@ -915,6 +923,9 @@ async fn run_yt_dlp(
         .arg("--fragment-retries")
         .arg("5")
         
+        
+        .arg("--merge-output-format")
+        .arg("mp4")
         .arg("--user-agent")
         .arg(DESKTOP_UA);
     if let Some(r) = &referer {

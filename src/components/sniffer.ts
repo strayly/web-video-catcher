@@ -60,7 +60,16 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
       row.innerHTML = `<span class="rp-fmt">${escapeHtml(label)}</span><button class="btn primary small rp-dl">${t("sniffer.fmtDownload")}</button>`;
       row.querySelector(".rp-dl")!.addEventListener("click", async () => {
         try {
-          await callCommand("download", { url: p.url, opts: { format: f.format_id, quality: "best", out_dir: "" } });
+          
+          const sel =
+            f.format_id === "best"
+              ? "best"
+              
+              : f.kind === "Audio"
+                ? f.format_id
+                
+                : `${f.format_id}+bestaudio`;
+          await callCommand("download", { url: p.url, opts: { format: sel, quality: "best", out_dir: "" } });
           panel.style.display = "none";
         } catch (err) {
           alert(errText(String(err)));
