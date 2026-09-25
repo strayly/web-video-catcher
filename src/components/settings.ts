@@ -26,7 +26,9 @@ export function mountSettings(root: HTMLElement): () => void {
       <label>${t("set.ytDlpFfmpeg")}</label>
       <div class="ctl">
         <button class="btn ghost" id="btn-test">${t("set.testBtn")}</button>
+        <button class="btn ghost" id="btn-upd-ytdlp">${t("set.updateYtDlp")}</button>
         <span id="engine-info" class="note">${t("set.engineNotTested")}</span>
+        <span id="ytdlp-info" class="note"></span>
       </div>
       <div class="note" style="margin-top:6px">
         ${t("set.noteEngine")}
@@ -81,6 +83,16 @@ export function mountSettings(root: HTMLElement): () => void {
         ver: info.yt_dlp ? info.yt_dlp_version : t("set.notInstalled"),
         ok2: info.ffmpeg ? t("common.ok") : t("common.missing"),
       });
+    });
+    root.querySelector("#btn-upd-ytdlp")!.addEventListener("click", async () => {
+      const el = root.querySelector("#ytdlp-info") as HTMLElement;
+      el.textContent = t("set.checking");
+      try {
+        const msg = await callCommand<string>("update_ytdlp");
+        el.textContent = errText(msg);
+      } catch (e) {
+        el.textContent = errText(String(e));
+      }
     });
   }
   window.addEventListener("i18n-change", render);

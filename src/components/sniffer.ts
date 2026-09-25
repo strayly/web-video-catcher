@@ -28,9 +28,30 @@ function fmtSize(bytes: number): string {
   return Math.max(1, Math.round(bytes / 1024)) + " KB";
 }
 
+// 解析得到的清晰度项(已合并进媒体列表, 点击直接下载并按 task id 显示状态)
+interface ResolvedItem {
+  id: string;
+  pageUrl: string;
+  formatId: string;
+  label: string;
+  kind: "Video" | "Audio";
+  title: string;
+  source: string;
+  taskId?: string;
+}
+function isResolved(x: MediaItem | ResolvedItem): x is ResolvedItem {
+  return (x as ResolvedItem).formatId !== undefined;
+}
+function hashId(s: string): string {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
 export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaItem[], tasks: DownloadTask[]) => void {
   const selected = new Set<string>();
   let currentMedia: MediaItem[] = [];
+  let resolved: ResolvedItem[] = [];
   let capLines: string[] = [];
   let listEl: HTMLElement, countEl: HTMLElement, mergeHint: HTMLElement;
 
@@ -41,67 +62,52 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
     (root.querySelector("#cap-status") as HTMLElement).textContent = capLines.join("  ·  ");
   };
 
-  // 解析事件(全局只注册一次): Rust 的 resolve_page 把页面 URL + 清晰度列表推回来
+  const resolveNote = () => root.querySelector("#resolve-note") as HTMLElement | null;
+  const showNote = (msg: string, err = false) => {
+    const n = resolveNote();
+    if (!n) return;
+    n.textContent = msg;
+    n.style.display = "block";
+    n.style.color = err ? "#e5484d" : "";
+  };
+
+  // 解析事件(全局只注册一次): Rust 的 resolve_page 把页面 URL + 清晰度列表推回来, 合并进媒体列表
   interface RFormat { format_id: string; quality: string; ext: string; kind: string; size: number }
+  const mkResolved = (pageUrl: string, title: string, f: RFormat): ResolvedItem => {
+    const id = "res_" + hashId(pageUrl) + "_" + hashId(f.format_id);
+    const label =
+      f.format_id === "best"
+        ? t("sniffer.fmtBest")
+        : `${f.quality} · ${f.ext} · ${f.kind === "Audio" ? t("kind.audio") : t("kind.other")}${f.size > 0 ? " · " + (f.size / 1048576).toFixed(1) + "MB" : ""}`;
+    let source = "解析";
+    try {
+      source = new URL(pageUrl).hostname;
+    } catch {
+    }
+    return { id, pageUrl, formatId: f.format_id, label, kind: f.kind === "Audio" ? "Audio" : "Video", title, source };
+  };
   listen<{ url: string; title: string; formats: RFormat[] }>("resolve://formats", (e) => {
     const p = e.payload;
-    const panel = root.querySelector("#resolve-panel") as HTMLElement | null;
-    if (!panel) return;
-    (root.querySelector("#rp-title") as HTMLElement).textContent = p.title;
-    const list = root.querySelector("#rp-list") as HTMLElement;
-    list.innerHTML = "";
-    for (const f of p.formats) {
-      const row = document.createElement("div");
-      row.className = "rp-row";
-      const label =
-        f.format_id === "best"
-          ? t("sniffer.fmtBest")
-          : `${f.quality} · ${f.ext} · ${f.kind === "Audio" ? t("kind.audio") : t("kind.other")}${f.size > 0 ? " · " + (f.size / 1048576).toFixed(1) + "MB" : ""}`;
-      row.innerHTML = `<span class="rp-fmt">${escapeHtml(label)}</span><button class="btn primary small rp-dl">${t("sniffer.fmtDownload")}</button>`;
-      row.querySelector(".rp-dl")!.addEventListener("click", async () => {
-        const btn = row.querySelector<HTMLButtonElement>(".rp-dl")!;
-        try {
-          const sel =
-            f.format_id === "best"
-              ? "best"
-
-              : f.kind === "Audio"
-                ? f.format_id
-
-                : `${f.format_id}+bestaudio`;
-          await callCommand("download", { url: p.url, opts: { format: sel, quality: "best", out_dir: "" } });
-          btn.textContent = "✓ " + t("sniffer.fmtAdded");
-          btn.disabled = true;
-        } catch (err) {
-          btn.disabled = false;
-          alert(errText(String(err)));
-        }
-      });
-      list.appendChild(row);
-    }
+    resolved = p.formats.map((f) => mkResolved(p.url, p.title, f));
+    if (resolved.length === 0) showNote(t("sniffer.resolveNone"), true);
+    else showNote(t("sniffer.resolveNote", { n: resolved.length }));
+    refresh();
   });
   listen<{ url: string; error: string }>("resolve://error", (e) => {
-    const panel = root.querySelector("#resolve-panel") as HTMLElement | null;
-    if (!panel) return;
-    (root.querySelector("#rp-title") as HTMLElement).textContent = t("sniffer.resolveFailed");
-    (root.querySelector("#rp-list") as HTMLElement).innerHTML = `<div class="info" style="color:#e5484d">${escapeHtml(errText(e.payload.error))}</div>`;
+    showNote(t("sniffer.resolveFailed") + ": " + errText(e.payload.error), true);
   });
 
-  // 打开解析面板并请求后端解析(yt-dlp)
+  // 打开解析(yt-dlp), 结果合并进媒体列表, 不再弹独立面板
   const doResolve = async (url: string) => {
     if (!url) {
       alert(t("sniffer.pleasePaste"));
       return;
     }
-    const panel = root.querySelector("#resolve-panel") as HTMLElement | null;
-    if (!panel) return;
-    (root.querySelector("#rp-title") as HTMLElement).textContent = t("sniffer.resolving");
-    (root.querySelector("#rp-list") as HTMLElement).innerHTML = "";
-    panel.style.display = "flex";
+    showNote(t("sniffer.resolving"));
     try {
       await callCommand("resolve_page", { url });
     } catch (e) {
-      (root.querySelector("#rp-list") as HTMLElement).innerHTML = `<div class="info" style="color:#e5484d">${escapeHtml(errText(String(e)))}</div>`;
+      showNote(t("sniffer.resolveFailed") + ": " + errText(String(e)), true);
     }
   };
 
@@ -118,10 +124,7 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
         <input type="checkbox" id="chk-popup" /> ${t("sniffer.chkPopup")}
       </label>
     </div>
-    <div class="resolve-panel" id="resolve-panel" style="display:none">
-      <div class="rp-head"><span id="rp-title"></span><span class="rp-close" id="btn-resolve-close">✕</span></div>
-      <div class="rp-list" id="rp-list"></div>
-    </div>
+    <div class="resolve-note" id="resolve-note" style="display:none"></div>
     <div class="capbar" id="cap-bar" style="display:none">
       <span class="cap-text" id="cap-status">${t("sniffer.capOpening")}</span>
       <span class="cap-acts">
@@ -154,10 +157,6 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
       }
     });
 
-    const resolvePanel = root.querySelector("#resolve-panel") as HTMLElement;
-    (root.querySelector("#btn-resolve-close") as HTMLElement).addEventListener("click", () => {
-      resolvePanel.style.display = "none";
-    });
     root.querySelector("#btn-resolve")!.addEventListener("click", async () => {
       const url = (root.querySelector("#manual-url") as HTMLInputElement).value.trim();
       await doResolve(url);
@@ -291,6 +290,29 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
         void callCommand("download", { url: u, opts: { format: "best", quality: "best", out_dir: "" } });
       }),
     );
+    // 解析得到的清晰度项: 点击直接下载(带格式选择器), 不弹面板、不显示"进入下载列表"
+    listEl.querySelectorAll<HTMLButtonElement>("[data-dl-res]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        const item = resolved.find((r) => r.id === b.dataset.dlRes);
+        if (!item) return;
+        const sel =
+          item.formatId === "best"
+            ? "best"
+            : item.kind === "Audio"
+              ? item.formatId
+              : `${item.formatId}+bestaudio`;
+        try {
+          const tid = await callCommand<string>("download", {
+            url: item.pageUrl,
+            opts: { format: sel, quality: "best", out_dir: "" },
+          });
+          item.taskId = tid;
+          refresh();
+        } catch (e) {
+          alert(errText(String(e)));
+        }
+      }),
+    );
     listEl.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((b) =>
       b.addEventListener("click", () => navigator.clipboard.writeText(b.dataset.copy || "")),
     );
@@ -332,9 +354,16 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
     const hasVideo = media.some((m) => m.kind !== "Audio");
     const hasAudio = media.some((m) => m.kind === "Audio");
     mergeHint.style.display = hasVideo && hasAudio ? "flex" : "none";
-    countEl.textContent = media.length ? `(${media.length})` : "";
-    listEl.innerHTML = media.length
-      ? media.map((m) => cardHtml(m, latestTask(m.url, tasks), selected.has(m.id))).join("")
+    const all: Array<MediaItem | ResolvedItem> = [...media, ...resolved];
+    countEl.textContent = all.length ? `(${all.length})` : "";
+    listEl.innerHTML = all.length
+      ? all
+          .map((x) =>
+            isResolved(x)
+              ? cardHtmlResolved(x, x.taskId ? tasks.find((tk) => tk.id === x.taskId) || null : null)
+              : cardHtml(x as MediaItem, latestTask((x as MediaItem).url, tasks), selected.has((x as MediaItem).id)),
+          )
+          .join("")
       : `<div class="empty">${t("sniffer.empty")}</div>`;
 
     listEl.querySelectorAll<HTMLInputElement>("input.msel").forEach((b) => {
@@ -453,6 +482,62 @@ function cardHtml(m: MediaItem, task: DownloadTask | null, checked: boolean): st
       <button class="btn primary" data-dl="${escapeAttr(m.url)}">${t("dl.retry")}</button>
       ${copyBtn}
     </div>
+  </div>`;
+}
+
+// 解析得到的清晰度项卡片: 与嗅探卡片一致的下载状态显示
+function cardHtmlResolved(r: ResolvedItem, task: DownloadTask | null): string {
+  const badge = r.kind === "Audio" ? t("kind.audio") : t("kind.other");
+  const cls = r.kind === "Audio" ? "badge audio" : "badge";
+  const sub = `<span class="${cls}">${badge}</span> ${[r.label, t("media.from", { source: r.source })]
+    .map(escapeHtml)
+    .join(" · ")}`;
+  const copyBtn = `<button class="btn ghost" data-copy="${escapeAttr(r.pageUrl)}">${t("sniffer.copy")}</button>`;
+
+  if (!task) {
+    return `<div class="card res">
+      <div class="thumb">▶</div>
+      <div class="meta"><div class="name">${escapeHtml(titleText(r.title))}</div><div class="sub">${sub}</div></div>
+      <div class="acts">
+        <button class="btn primary" data-dl-res="${escapeAttr(r.id)}">${t("sniffer.download")}</button>
+        ${copyBtn}
+      </div>
+    </div>`;
+  }
+
+  const pct = Math.round(task.progress * 100);
+  if (task.status === "Queued" || task.status === "Downloading" || task.status === "Merging") {
+    const label =
+      task.status === "Queued"
+        ? t("dl.queued")
+        : task.status === "Merging"
+          ? t("dl.merging")
+          : t("dl.downloading", { pct });
+    return `<div class="card res">
+      <div class="thumb">▶</div>
+      <div class="meta"><div class="name">${escapeHtml(titleText(task.title || r.title))}</div><div class="sub">${sub}</div><div class="minibar"><i style="width:${task.status === "Queued" ? 0 : pct}%"></i></div></div>
+      <div class="acts"><span class="dlstate">${label}</span><button class="btn ghost" data-cancel="${task.id}">${t("dl.cancel")}</button>${copyBtn}</div>
+    </div>`;
+  }
+
+  if (task.status === "Done") {
+    const fp = task.file_path || "";
+    const revealTarget = fp || task.out_path;
+    return `<div class="card res">
+      <div class="thumb done">✓</div>
+      <div class="meta"><div class="name">${escapeHtml(titleText(task.title || r.title))}</div><div class="sub">${sub}</div></div>
+      <div class="acts"><span class="dlstate ok">${t("dl.done")}</span>${fp ? `<button class="btn primary" data-play="${escapeAttr(fp)}">${t("dl.play")}</button>` : ""}<button class="btn ghost" data-reveal="${escapeAttr(revealTarget)}">${t("dl.folder")}</button>${copyBtn}</div>
+    </div>`;
+  }
+
+  const errLine = task.error
+    ? `<div class="errline" title="${escapeAttr(errText(task.error))}">${escapeHtml(errText(task.error))}</div>`
+    : "";
+  const stText = task.status === "Failed" ? t("dl.failed") : t("dl.cancelled");
+  return `<div class="card res haserr">
+    <div class="thumb">▶</div>
+    <div class="meta"><div class="name">${escapeHtml(titleText(r.title))}</div><div class="sub">${sub}</div>${errLine}</div>
+    <div class="acts"><span class="dlstate err">${stText}</span><button class="btn primary" data-dl-res="${escapeAttr(r.id)}">${t("dl.retry")}</button>${copyBtn}</div>
   </div>`;
 }
 

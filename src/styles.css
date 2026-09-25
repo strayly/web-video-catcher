@@ -150,15 +150,14 @@ body {
 .sw.off::after { right: auto; left: 2px; }
 
 .manual { display: flex; gap: 8px; margin-bottom: 18px; }
-.resolve-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.resolve-note {
+  font-size: 12px;
+  color: var(--sub);
+  padding: 6px 12px;
+  margin-bottom: 10px;
+  border-left: 3px solid var(--accent);
   background: var(--panel);
-  border: 1px solid var(--accent);
-  border-radius: 10px;
-  padding: 10px 12px;
-  margin-bottom: 16px;
+  border-radius: 0 8px 8px 0;
 }
 .rp-head { display: flex; align-items: center; justify-content: space-between; font-weight: 600; font-size: 13px; color: var(--text); }
 .rp-close { cursor: pointer; color: var(--sub); padding: 0 4px; }
@@ -214,6 +213,7 @@ h3.sec { font-size: 13px; color: var(--sub); margin: 4px 0 12px; font-weight: 60
 .badge.audio { background: #e8f5ec; color: #1f8a4c; }
 .acts { display: flex; gap: 7px; flex: 0 0 auto; align-items: center; }
 .acts .btn { padding: 7px 12px; font-size: 12px; }
+.card.res { border-left: 3px solid var(--accent); background: #fcfdff; }
 .btn.small { padding: 5px 10px; font-size: 12px; }
 
 /* 列表头 + 批量操作条 */

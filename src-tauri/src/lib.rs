@@ -73,6 +73,11 @@ fn resolve_page(app: AppHandle, state: State<AppState>, url: String) {
 }
 
 #[tauri::command]
+async fn update_ytdlp() -> String {
+    download::update_ytdlp().await
+}
+
+#[tauri::command]
 fn download(app: AppHandle, state: State<AppState>, url: String, opts: DownloadOptions) -> String {
     let st = state.inner().clone();
     download::enqueue(app, st, url, opts.format, opts.out_dir)
@@ -433,7 +438,8 @@ pub fn run() {
             reveal_path,
             delete_task,
             delete_tasks,
-            remove_media
+            remove_media,
+            update_ytdlp
         ])
         .run(tauri::generate_context!())
         .expect("启动 Tauri 应用失败");

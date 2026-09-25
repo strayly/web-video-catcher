@@ -154,6 +154,20 @@ callCommand<UpdateInfo>("check_update")
   })
   .catch(() => {});
 
+// yt-dlp 通用保鲜方案: 不再依赖人工每 90 天检查。启动后静默自更新, 至多每周一次(不弹窗、不影响启动)。
+function maybeAutoUpdateYtDlp() {
+  try {
+    const key = "ytdlp_lastcheck";
+    const last = Number(localStorage.getItem(key) || "0");
+    const now = Date.now();
+    if (now - last < 7 * 86400000) return;
+    localStorage.setItem(key, String(now));
+    callCommand("update_ytdlp").then(() => {}).catch(() => {});
+  } catch {
+  }
+}
+maybeAutoUpdateYtDlp();
+
 // 语言切换时刷新导航/标题与当前视图
 function applyLang() {
   document.title = t("app.title");

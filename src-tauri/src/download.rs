@@ -1250,6 +1250,37 @@ fn emit_resolve_error(app: &AppHandle, url: &str, err: &str) {
     );
 }
 
+// 通用方案: 让 yt-dlp 自更新(不再依赖人工每 90 天检查)。-U 比对 GitHub 最新版, 仅必要时下载, 平时只是一次轻量请求。
+pub async fn update_ytdlp() -> String {
+    let mut cmd = TokioCommand::new("yt-dlp");
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd.arg("-U").arg("--quiet").arg("--no-warnings");
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    match cmd.output().await {
+        Ok(_) => {
+            let mut v = TokioCommand::new("yt-dlp");
+            #[cfg(windows)]
+            v.creation_flags(CREATE_NO_WINDOW);
+            v.arg("--version");
+            if let Ok(o) = v.output().await {
+                let ver = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                if !ver.is_empty() {
+                    return bi(
+                        &format!("yt-dlp 自检/更新完成, 当前版本 {ver}"),
+                        &format!("yt-dlp checked/updated, current version {ver}"),
+                    );
+                }
+            }
+            bi("yt-dlp 更新完成(无法读取版本号)", "yt-dlp update done (version unknown)")
+        }
+        Err(e) => bi(
+            &format!("未找到 yt-dlp 或更新失败: {e}（请确认本机已安装 yt-dlp 并在 PATH 中）"),
+            &format!("yt-dlp not found or update failed: {e} (make sure yt-dlp is installed and on PATH)"),
+        ),
+    }
+}
+
 
 fn extract_error(stderr: &str) -> String {
     let key = stderr
