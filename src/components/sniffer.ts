@@ -77,8 +77,10 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
     const id = "res_" + hashId(pageUrl) + "_" + hashId(f.format_id);
     const label =
       f.format_id === "best"
-        ? t("sniffer.fmtBest")
-        : `${f.quality} · ${f.ext} · ${f.kind === "Audio" ? t("kind.audio") : t("kind.other")}${f.size > 0 ? " · " + (f.size / 1048576).toFixed(1) + "MB" : ""}`;
+        ? `${t("sniffer.fmtBest")}${f.quality && f.quality !== "best" ? " · " + f.quality : ""}`
+        : f.format_id === "ba"
+          ? `${t("sniffer.fmtBestAudio")} · ${f.ext}${f.size > 0 ? " · " + (f.size / 1048576).toFixed(1) + "MB" : ""}`
+          : `${f.quality} · ${f.ext} · ${f.kind === "Audio" ? t("kind.audio") : t("kind.other")}${f.size > 0 ? " · " + (f.size / 1048576).toFixed(1) + "MB" : ""}`;
     let source = "解析";
     try {
       source = new URL(pageUrl).hostname;

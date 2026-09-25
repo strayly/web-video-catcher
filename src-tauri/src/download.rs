@@ -950,9 +950,9 @@ async fn run_yt_dlp(
     let out_tmpl = format!("{}/{}__%(title).60s.%(ext)s", dir, id);
     
     let yt_format = if format.trim() == "best" {
-        
-        
-        "bestvideo+bestaudio/best".to_string()
+
+
+        "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best".to_string()
     } else {
         format.clone()
     };
@@ -1182,47 +1182,44 @@ pub async fn resolve_page(app: AppHandle, state: AppState, url: String) {
                         .unwrap_or(&url)
                         .to_string();
                     let mut formats: Vec<ResolvedFormat> = Vec::new();
+                    let arr = v["formats"].as_array();
+                    let max_h = arr
+                        .map(|a| a.iter().filter_map(|f| f["height"].as_u64()).max().unwrap_or(0))
+                        .unwrap_or(0);
                     formats.push(ResolvedFormat {
                         format_id: "best".into(),
-                        quality: "best".into(),
+                        quality: if max_h > 0 { format!("{max_h}P") } else { "best".into() },
                         ext: "mp4".into(),
                         kind: "Video".into(),
                         size: -1,
                     });
-                    if let Some(arr) = v["formats"].as_array() {
-                        for f in arr {
-                            if f["ext"].as_str() == Some("mhtml") {
-                                continue;
-                            }
-                            let fid = match f["format_id"].as_str() {
-                                Some(x) if !x.is_empty() => x.to_string(),
-                                _ => continue,
-                            };
-                            let ext = f["ext"].as_str().unwrap_or("").to_string();
-                            let height = f["height"].as_u64().unwrap_or(0);
-                            let quality = if height > 0 {
-                                format!("{}P", height)
-                            } else if f["acodec"].as_str() == Some("none") {
-                                "视频流".into()
-                            } else {
-                                "音频流".into()
-                            };
-                            let kind = if f["vcodec"].as_str() == Some("none") {
-                                "Audio"
-                            } else {
-                                "Video"
-                            }
-                            .to_string();
-                            let size = f["filesize"].as_i64().unwrap_or(-1);
-                            formats.push(ResolvedFormat {
-                                format_id: fid,
-                                quality,
-                                ext,
-                                kind,
-                                size,
-                            });
-                        }
-                    }
+                    let audio_entry = arr
+                        .map(|a| {
+                            a.iter()
+                                .filter(|f| f["vcodec"].as_str() == Some("none"))
+                                .max_by(|x, y| {
+                                    let k = |f: &&serde_json::Value| f["abr"].as_f64().unwrap_or(0.0);
+                                    k(x).partial_cmp(&k(y)).unwrap_or(std::cmp::Ordering::Equal)
+                                })
+                                .cloned()
+                        })
+                        .unwrap_or(None);
+                    formats.push(match audio_entry {
+                        Some(f) => ResolvedFormat {
+                            format_id: "ba".into(),
+                            quality: String::new(),
+                            ext: f["ext"].as_str().unwrap_or("m4a").to_string(),
+                            kind: "Audio".into(),
+                            size: f["filesize"].as_i64().unwrap_or(-1),
+                        },
+                        None => ResolvedFormat {
+                            format_id: "ba".into(),
+                            quality: String::new(),
+                            ext: "m4a".into(),
+                            kind: "Audio".into(),
+                            size: -1,
+                        },
+                    });
                     let payload = ResolvedPage {
                         url: page_url,
                         title,
