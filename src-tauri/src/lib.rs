@@ -149,6 +149,112 @@ fn close_capture(app: AppHandle) {
 
 
 #[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    let u = url.trim();
+    if !(u.starts_with("http://") || u.starts_with("https://")) {
+        return Err(crate::download::bi(
+            "不支持的链接, 仅允许 http/https",
+            "Unsupported link, only http/https allowed",
+        ));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let quoted = u.replace('"', "");
+        std::process::Command::new("cmd")
+            .raw_arg(format!("/c start \"\" \"{quoted}\""))
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| {
+                crate::download::bi(&format!("打开失败: {e}"), &format!("Failed to open: {e}"))
+            })?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(u)
+            .spawn()
+            .map_err(|e| {
+                crate::download::bi(&format!("打开失败: {e}"), &format!("Failed to open: {e}"))
+            })?;
+        Ok(())
+    }
+}
+
+#[derive(serde::Serialize)]
+struct UpdateInfo {
+    current: String,
+    latest: String,
+    has_update: bool,
+    url: String,
+}
+
+fn ver_tuple(v: &str) -> Vec<u64> {
+    v.trim()
+        .trim_start_matches('v')
+        .split('.')
+        .map(|p| p.trim().parse::<u64>().unwrap_or(0))
+        .collect()
+}
+
+#[tauri::command]
+async fn check_update() -> UpdateInfo {
+    let current = env!("CARGO_PKG_VERSION").to_string();
+    let release_page = "https://github.com/strayly/web-video-catcher/releases".to_string();
+    let api = "https://api.github.com/repos/strayly/web-video-catcher/releases/latest";
+    let client = match reqwest::Client::builder()
+        .user_agent("web-video-catcher")
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => {
+            return UpdateInfo {
+                current,
+                latest: String::new(),
+                has_update: false,
+                url: release_page,
+            }
+        }
+    };
+    let latest: Option<serde_json::Value> = match client
+        .get(api)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+    {
+        Ok(r) => match r.text().await {
+            Ok(txt) => serde_json::from_str(&txt).ok(),
+            Err(_) => None,
+        },
+        Err(_) => None,
+    };
+    let (tag, rel_url) = match &latest {
+        Some(v) => (
+            v["tag_name"].as_str().unwrap_or("").to_string(),
+            v["html_url"]
+                .as_str()
+                .unwrap_or(&release_page)
+                .to_string(),
+        ),
+        None => (String::new(), release_page),
+    };
+    let has_update = {
+        let c = ver_tuple(&current);
+        let l = ver_tuple(&tag);
+        !tag.is_empty() && l > c
+    };
+    UpdateInfo {
+        current,
+        latest: tag,
+        has_update,
+        url: rel_url,
+    }
+}
+
+#[tauri::command]
 fn open_path(path: String) -> Result<(), String> {
     let p = path.trim();
     if p.is_empty() {
@@ -322,6 +428,8 @@ pub fn run() {
             open_capture,
             close_capture,
             open_path,
+            open_url,
+            check_update,
             reveal_path,
             delete_task,
             delete_tasks,

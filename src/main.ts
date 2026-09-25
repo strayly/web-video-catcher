@@ -25,6 +25,7 @@ app.innerHTML = `
         </div>
       </div>
       <div class="main">
+        <div class="update-banner" id="update-banner" style="display:none"></div>
         <section class="view active" id="view-sniffer"></section>
         <section class="view" id="view-downloads"></section>
         <section class="view" id="view-settings"></section>
@@ -127,6 +128,32 @@ callCommand<DownloadTask[]>("list_tasks").then((t) => {
   else if (activeView() === "sniffer") updateSniffer(state.media, taskList());
 });
 
+// 升级检测: 启动时静默检查, 发现新版本显示顶部横幅
+type UpdateInfo = { current: string; latest: string; has_update: boolean; url: string };
+let updateInfo: UpdateInfo | null = null;
+function renderUpdate() {
+  const banner = document.getElementById("update-banner") as HTMLElement | null;
+  if (!banner) return;
+  if (!updateInfo || !updateInfo.has_update) {
+    banner.style.display = "none";
+    return;
+  }
+  banner.style.display = "flex";
+  banner.innerHTML = `⬆️ ${t("update.found", { ver: updateInfo.latest.replace(/^v/, "") })} <a href="#">${t("update.openRelease")}</a>`;
+  banner.querySelector("a")!.addEventListener("click", async (ev) => {
+    ev.preventDefault();
+    try {
+      await callCommand("open_url", { url: updateInfo!.url });
+    } catch {}
+  });
+}
+callCommand<UpdateInfo>("check_update")
+  .then((u) => {
+    updateInfo = u;
+    renderUpdate();
+  })
+  .catch(() => {});
+
 // 语言切换时刷新导航/标题与当前视图
 function applyLang() {
   document.title = t("app.title");
@@ -149,6 +176,7 @@ function applyLang() {
 }
 window.addEventListener("i18n-change", () => {
   applyLang();
+  renderUpdate();
   renderActive();
 });
 initI18n();

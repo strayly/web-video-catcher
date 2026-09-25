@@ -44,9 +44,7 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
   function shell() {
     root.innerHTML = `
     <div class="statusbar">
-      <span class="pill" id="pill-proxy"><span class="led off"></span> ${t("sniffer.proxyOff")}</span>
-      <span class="pill warn"><span class="led"></span> ${t("sniffer.capCount", { n: 0 })}</span>
-      <span class="switch"><span>${t("sniffer.captureToggle")}</span><span class="sw off" id="sw-proxy"></span></span>
+      <span class="ad-link" id="ad-link" title="https://www.licstack.com/">🎯 ${t("sniffer.adText")}</span>
     </div>
     <div class="manual">
       <input id="manual-url" type="text" placeholder="${t("sniffer.urlPlaceholder")}" />
@@ -79,27 +77,10 @@ export function mountSniffer(root: HTMLElement, refresh: () => void): (m: MediaI
     listEl = root.querySelector("#media-list") as HTMLElement;
     countEl = root.querySelector("#m-count") as HTMLElement;
     mergeHint = root.querySelector("#merge-hint") as HTMLElement;
-    const sw = root.querySelector("#sw-proxy") as HTMLElement;
-    const pill = root.querySelector("#pill-proxy") as HTMLElement;
 
-    async function refreshProxy() {
+    root.querySelector("#ad-link")!.addEventListener("click", async () => {
       try {
-        const s = await callCommand<{ running: boolean; addr: string }>("proxy_status");
-        pill.innerHTML = s.running
-          ? `<span class="led"></span> ${t("sniffer.proxyOn", { addr: s.addr })}`
-          : `<span class="led off"></span> ${t("sniffer.proxyOff")}`;
-        sw.classList.toggle("off", !s.running);
-      } catch {
-      }
-    }
-    refreshProxy();
-
-    sw.addEventListener("click", async () => {
-      try {
-        const s = await callCommand<{ running: boolean }>("proxy_status");
-        if (s.running) await callCommand("stop_proxy");
-        else await callCommand("start_proxy");
-        refreshProxy();
+        await callCommand("open_url", { url: "https://www.licstack.com/" });
       } catch {
       }
     });
