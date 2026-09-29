@@ -19,23 +19,7 @@
 - **HTTPS 解密**：内置自签 CA（纯 Rust `rcgen` 生成），用于捕获通道的 HTTPS 流量。
 
 ## 使用方法
-
-### 开发调试
-
-```bash
-npm install
-npm run tauri dev      # 启动开发模式（带热更新）
-```
-
-### 打包发布
-
-```bash
-npm install
-npm run tauri build    # 产出 Windows 安装包（nsis）
-```
-
-### 基本操作
-
+<img src="example.png" alt="使用方法" width="540">
 1. 打开软件，进入「嗅探」页。
 2. 在捕获浏览器里输入视频页面网址并访问。
 3. 页面里的媒体直链会自动出现在列表中，点击「下载」即可。
