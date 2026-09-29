@@ -72,11 +72,15 @@ npm run tauri build    # produce the Windows installer (nsis)
 └── zfb.png                 # donation QR code (Alipay)
 ```
 
-## License
+## License & Disclaimer
 
-This project is open source under the [MIT License](./LICENSE).
+This project is provided free under a **Non-Commercial License**. Full terms in [LICENSE](./LICENSE).
 
-Copyright © 2026 strayly
+- **Free & open source**: download, study and use for personal non-commercial purposes; redistribute the original copy with the license and copyright notice intact.
+- **No commercial use**: without prior written authorization, do not sell, paid-integrate, offer paid download/transcode/hosting, monetize via ads/traffic, or redistribute for profit. For commercial collaboration, contact via the repo homepage.
+- **Disclaimer**: provided "as is" with no warranty and no liability for consequences of use; downloading copyrighted content requires authorization and compliance with local law — copyright or compliance disputes are the user's sole responsibility.
+
+Copyright © 2026 strayly. All rights reserved.
 
 ---
 
@@ -84,5 +88,4 @@ Copyright © 2026 strayly
 
 If this tool helps you, feel free to buy me a coffee ☕
 
-<img src="zfb.png" alt="If this tool helps you, feel free to buy me a coffee" width="240">
-
+![Alipay donation](zfb.png)

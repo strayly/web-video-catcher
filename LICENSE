@@ -1,21 +1,36 @@
-MIT License
+Web Video Catcher — Non-Commercial License
+==========================================
 
-Copyright (c) 2026 strayly
+Copyright © 2026 strayly. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This license agreement (the "Agreement") is a legal agreement between you and the copyright holder regarding the use of the "Web Video Catcher" software (the "Software", including its source code, binary distributions and accompanying documentation). By downloading, installing or using the Software, you agree to be bound by this Agreement.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. Grant of License
+Subject to your compliance with all terms of this Agreement, the copyright holder grants you a free, non-exclusive, worldwide, perpetual, non-transferable license to:
+1. download, install and copy the Software;
+2. use the Software for personal study, research or other non-commercial purposes;
+3. distribute verbatim copies of the Software, provided that this Agreement and the copyright notice are retained in full (no modification, no charge).
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+2. Restrictions (Important)
+Without the prior written authorization of the copyright holder, you may not use the Software for any commercial purpose, including but not limited to:
+1. selling the Software, or charging users for it as a core feature;
+2. integrating, bundling or embedding the Software into any paid or commercial product, service or internal system;
+3. providing paid download, transcoding, hosting or extraction services through the Software;
+4. monetizing through advertising, traffic, paid membership unlocks, or any other for-profit distribution;
+5. sublicensing, reselling or transferring the license rights to any third party.
+For commercial use, please obtain written authorization via the contact information on the GitHub repository homepage.
+
+3. Disclaimer
+1. The Software is provided "AS IS", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose and non-infringement. The copyright holder does not warrant that the Software will be error-free, uninterrupted or able to meet your requirements.
+2. In no event shall the copyright holder be liable for any direct, indirect, incidental, special or consequential damages (including loss of data, loss of profits or business interruption) arising out of the use of or inability to use the Software, whether or not such damages were foreseeable.
+3. You understand and agree that: downloading, saving or distributing any audio/video content through the Software requires that you first obtain lawful authorization from the rights holder of that content and comply with the laws of your jurisdiction (including but not limited to copyright law and relevant international treaties). The copyright holder is not responsible for any copyright dispute, compliance issue or legal consequence arising from your use of the Software.
+4. The Software may invoke third-party components at runtime (such as yt-dlp, ffmpeg, etc.), whose licenses and copyrights are held by their respective owners. This Agreement does not cover third-party components, and the copyright holder is not responsible for their behavior.
+
+4. Miscellaneous
+1. This Agreement constitutes the entire agreement between you and the copyright holder regarding the use of the Software, and supersedes all prior oral or written agreements on the subject.
+2. If any provision of this Agreement is held invalid or unenforceable by a competent authority, the remaining provisions shall remain in effect.
+3. This Agreement is governed by the laws of the copyright holder's jurisdiction.
+
+---
+
+A Chinese translation is provided in [LICENSE.zh-CN](./LICENSE.zh-CN) for convenience. In case of any conflict or inconsistency between the two versions, the English version above shall prevail.
