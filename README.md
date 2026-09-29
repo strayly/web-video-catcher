@@ -18,22 +18,6 @@
 - **大小探测**：后台只读请求探测媒体长度，刷新下载卡片信息。
 - **HTTPS 解密**：内置自签 CA（纯 Rust `rcgen` 生成），用于捕获通道的 HTTPS 流量。
 
-## 使用方法
-
-### 开发调试
-
-```bash
-npm install
-npm run tauri dev      # 启动开发模式（带热更新）
-```
-
-### 打包发布
-
-```bash
-npm install
-npm run tauri build    # 产出 Windows 安装包（nsis）
-```
-
 ### 基本操作
 
 1. 打开软件，进入「嗅探」页。
@@ -41,7 +25,7 @@ npm run tauri build    # 产出 Windows 安装包（nsis）
 3. 页面里的媒体直链会自动出现在列表中，点击「下载」即可。
 4. 在「下载管理」页查看进度、合并结果与文件大小。
 5. 在「设置」页调整 UA、捕获行为等选项。
-
+<img src="jietu.png"  >
 ## 技术栈
 
 - **框架**：Tauri 2
@@ -88,4 +72,4 @@ Copyright © 2026 strayly. 保留一切权利。
 
 如果这个工具对你有帮助，欢迎扫码打赏 ☕
 
-![支付宝打赏](zfb.png)
+<img src="zfb.png" alt="支付宝打赏" width="240">
