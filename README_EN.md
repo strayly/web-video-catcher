@@ -84,4 +84,5 @@ Copyright © 2026 strayly
 
 If this tool helps you, feel free to buy me a coffee ☕
 
-![Alipay donation](zfb.png)
+<img src="zfb.png" alt="If this tool helps you, feel free to buy me a coffee" width="240">
+
