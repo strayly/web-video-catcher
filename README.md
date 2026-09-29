@@ -84,4 +84,4 @@ Copyright © 2026 strayly
 
 如果这个工具对你有帮助，欢迎扫码打赏 ☕
 
-![支付宝打赏](zfb2.png)
+![支付宝打赏](zfb.png)
